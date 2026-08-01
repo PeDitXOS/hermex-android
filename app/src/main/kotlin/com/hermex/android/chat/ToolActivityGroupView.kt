@@ -29,7 +29,7 @@ fun ToolActivityGroupView(
 
     Surface(
         modifier = modifier.animateContentSize(),
-        shape = RoundedCornerShape(HermexRadii.Card),
+        shape = RoundedCornerShape(HermexRadii.Cell),
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
     ) {
         Column(modifier = Modifier.padding(12.dp)) {

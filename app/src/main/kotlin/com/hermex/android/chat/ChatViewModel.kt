@@ -48,6 +48,7 @@ import com.hermex.android.core.network.dto.ClarificationRespondRequest
 import com.hermex.android.core.network.dto.SessionYoloRequest
 import com.hermex.android.core.network.dto.TruncateSessionRequest
 import com.hermex.android.core.network.dto.BranchSessionRequest
+import com.hermex.android.core.network.dto.SessionRenameRequest
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -57,7 +58,6 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import android.media.MediaPlayer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.io.File
 
 private const val OFFLINE_CACHE_MESSAGE = "Unable to reach server -- showing cached conversation"
 
