@@ -365,26 +365,6 @@ fun ChatComposer(
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        AttachFileButton(
-                            enabled = composerState.isAttachButtonEnabled,
-                            isUploading = composerState.isUploadingAttachment,
-                            onAttachFile = actions.onAttachFile,
-                        )
-                        ProfileSelectorButton(
-                            profileOptions = profileSelectorState.profileOptions,
-                            selectedProfileName = profileSelectorState.selectedProfileName,
-                            isSwitchingProfile = composerState.isProfileSelectorLoading,
-                            onSelectProfile = actions.onSelectProfile,
-                        )
-                        ModelSelectorButton(
-                            modelCatalogGroups = modelSelectorState.modelCatalogGroups,
-                            currentModel = modelSelectorState.currentModel,
-                            currentModelProvider = modelSelectorState.currentModelProvider,
-                            isLoadingModelCatalog = modelSelectorState.isLoadingModelCatalog,
-                            isUpdatingComposerConfiguration = composerState.isModelSelectorLoading,
-                            onOpenModelPicker = actions.onOpenModelPicker,
-                            onSelectModel = actions.onSelectModel,
-                        )
                         // Mic button — bottom strip, hold to record
                         IconButton(
                             modifier = Modifier.combinedClickable(
@@ -432,10 +412,27 @@ fun ChatComposer(
                                 )
                             }
                         }
+
+                        AttachFileButton(
+                            enabled = composerState.isAttachButtonEnabled,
+                            isUploading = composerState.isUploadingAttachment,
+                            onAttachFile = actions.onAttachFile,
                         )
-                    }
-                }
-            }
+                        ProfileSelectorButton(
+                            profileOptions = profileSelectorState.profileOptions,
+                            selectedProfileName = profileSelectorState.selectedProfileName,
+                            isSwitchingProfile = composerState.isProfileSelectorLoading,
+                            onSelectProfile = actions.onSelectProfile,
+                        )
+                        ModelSelectorButton(
+                            modelCatalogGroups = modelSelectorState.modelCatalogGroups,
+                            currentModel = modelSelectorState.currentModel,
+                            currentModelProvider = modelSelectorState.currentModelProvider,
+                            isLoadingModelCatalog = modelSelectorState.isLoadingModelCatalog,
+                            isUpdatingComposerConfiguration = composerState.isModelSelectorLoading,
+                            onOpenModelPicker = actions.onOpenModelPicker,
+                            onSelectModel = actions.onSelectModel,
+                        )
         }
     }
 }
@@ -499,8 +496,6 @@ private fun ComposerChip(
  * available icon and is what the MVP spec explicitly allows as a fallback. Opens the system
  * document picker (Storage Access Framework), so no storage permission is needed: the picker
  * itself grants this app read access to whatever the user selects. */
-@Composable
-private fun AttachFileButton(
     enabled: Boolean,
     isUploading: Boolean,
     onAttachFile: (Uri) -> Unit,
