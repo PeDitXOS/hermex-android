@@ -8,10 +8,16 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import com.hermex.android.navigation.HermexNavGraph
 import com.hermex.android.navigation.HermexIntentDestination
 import com.hermex.android.navigation.hermexDestination
+import com.hermex.android.onboarding.OnboardingFlow
+import com.hermex.android.onboarding.OnboardingManager
 import com.hermex.android.ui.theme.HermexTheme
 import kotlinx.coroutines.flow.MutableStateFlow
 
@@ -24,16 +30,24 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         val appContainer = (application as HermexApplication).appContainer
         setContent {
+            var showOnboarding by remember { mutableStateOf(!OnboardingManager.isCompleted(this)) }
             HermexTheme {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background,
                 ) {
-                    HermexNavGraph(
-                        appContainer = appContainer,
-                        externalIntentDestination = externalIntentDestination,
-                        onExternalIntentConsumed = { externalIntentDestination.value = null },
-                    )
+                    if (showOnboarding) {
+                        OnboardingFlow(onCompleted = {
+                            showOnboarding = false
+                            OnboardingManager.markCompleted(this)
+                        })
+                    } else {
+                        HermexNavGraph(
+                            appContainer = appContainer,
+                            externalIntentDestination = externalIntentDestination,
+                            onExternalIntentConsumed = { externalIntentDestination.value = null },
+                        )
+                    }
                 }
             }
         }

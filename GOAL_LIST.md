@@ -11,7 +11,7 @@ Build via **GitHub Actions only** — no local compilation on this server.
 Android editMessage فقط truncate + pre-fill composer می‌کنه.
 iOS یه Edit Sheet جداگانه باzTextEditor نشون می‌ده.
 
-- [ ] **Edit Sheet**: اضافه کردن EditMessageSheet (bottom sheet با TextEditor) به جای pre-fill composer
+- [x] **Edit Sheet**: اضافه کردن EditMessageSheet (bottom sheet با TextEditor) به جای pre-fill composer
 - [ ] **Edit warning**: نشون دادن هشدار "Editing will discard N later messages" مثل iOS
 - [ ] **User messages only**: فقط پیام‌های user قابل edit باشن
 - [ ] **Disabled during stream**: Edit غیرفعال باشه وقتی response داره stream می‌شه
@@ -20,22 +20,22 @@ iOS یه Edit Sheet جداگانه باzTextEditor نشون می‌ده.
 Android: `TODO(v0.3.0 audit): steer-while-running NOT implemented`
 iOS: `/steer` slash command + `POST /api/chat/steer` + `StreamingSendBehavior` setting
 
-- [ ] **API endpoint**: اضافه کردن `steerChat(sessionID, text)` به HermexApi
+- [x] **API endpoint**: اضافه کردن `steerChat(sessionID, text)` به HermexApi
 - [ ] **StreamingSendBehavior setting**: تنظیم رفتار ارسال در حین streaming:
   - `steer` (پیش‌فرض) — پیام رو به عنوان steer بفرست
   - `cancel-and-send` — استریم رو cancel کن بعد بفرست  
   - `queue` — توی صف منتظر بذار
-- [ ] **Slash command**: `/steer <message>` به CommandRegistry اضافه شه
-- [ ] **UI integration**: وقتی response داره stream می‌شه و user پیام می‌فرسته، steer فعال باشه
-- [ ] **SSE event**: `pending_steer_leftover` event رو handle کن
+- [x] **Slash command**: `/steer <message>` به CommandRegistry اضافه شه
+- [x] **UI integration**: وقتی response داره stream می‌شه و user پیام می‌فرسته، steer فعال باشه
+- [x] **SSE event**: `pending_steer_leftover` event رو handle کن
 
 ### 1.3 Fork / Branch (کاملاً缺失)
 iOS: "Fork From Here" در message context menu → `POST /api/chat/branch`
 
-- [ ] **API**: اضافه کردن `branchSession(sessionID)` endpoint
-- [ ] **Fork From Here**: در long-press menu پیام‌ها اضافه شه
-- [ ] **Session navigation**: بعد از fork، کاربر به session جدید هدایت شه
-- [ ] **Slash command**: `/fork` و `/branch` اضافه شه
+- [x] **API**: اضافه کردن `branchSession(sessionID)` endpoint
+- [x] **Fork From Here**: در long-press menu پیام‌ها اضافه شه
+- [x] **Session navigation**: بعد از fork، کاربر به session جدید هدایت شه
+- [x] **Slash command**: `/fork` و `/branch` اضافه شه
 
 ### 1.4 Message Context Menu کامل
 iOS 6 action داره، Android فقط 3 تا:
@@ -49,16 +49,16 @@ iOS 6 action داره، Android فقط 3 تا:
 | Listen (TTS) | ✅ | ❌ |
 | Select Text | ✅ | ❌ |
 
-- [ ] **Regenerate from point**: Regenerate از یه پیام خاص (نه فقط last user message)
-- [ ] **Listen / TTS**: پخش صوتی پاسخ assistant (port InlineAudioPlayerView + TTS API)
-- [ ] **Select Text**: متن پاسخ رو قابل انتخاب کن
-- [ ] **Context menu UI**: منوی long-press رو با آیکون‌ها و disabled states کامل کن
+- [x] **Regenerate from point**: Regenerate از یه پیام خاص (نه فقط last user message)
+- [x] **Listen / TTS**: پخش صوتی پاسخ assistant (port InlineAudioPlayerView + TTS API)
+- [x] **Select Text**: متن پاسخ رو قابل انتخاب کن
+- [x] **Context menu UI**: منوی long-press رو با آیکون‌ها و disabled states کامل کن
 
 ### 1.5 Slash Commands (4 vs 26)
 iOS: help, clear, model, workspace, reasoning, new, stop, title, personality, skills, compress, compact, retry, undo, branch, fork, queue, steer, interrupt, status, goal, btw, background, bg
 Android: /edit, /continue, /summarize, /search
 
-- [ ] اضافه کردن دستورات گمشده: `/stop`, `/steer`, `/fork`, `/branch`, `/retry`, `/undo`, `/compress`, `/compact`, `/status`, `/goal`, `/new`, `/clear`, `/model`, `/skills`, `/personality`, `/reasoning`, `/title`, `/interrupt`, `/queue`, `/btw`, `/background`, `/bg`
+- [x] اضافه کردن دستورات گمشده: `/stop`, `/steer`, `/fork`, `/branch`, `/retry`, `/undo`, `/compress`, `/compact`, `/status`, `/goal`, `/new`, `/clear`, `/model`, `/skills`, `/personality`, `/reasoning`, `/title`, `/interrupt`, `/queue`, `/btw`, `/background`, `/bg`
 
 ---
 
@@ -68,9 +68,9 @@ Android: /edit, /continue, /summarize, /search
 iOS: `ComposerVoiceNoteRecorder` — hold-to-talk, AAC/M4A recording, slide-to-cancel
 Android: فقط basic `VoiceInputHandler` (Android SpeechRecognizer)
 
-- [ ] **VoiceNoteRecorder**: کلاس ضبط صدا با MediaRecorder (AAC/M4A)
-- [ ] **Hold-to-talk gesture**: Long press روی mic → ضبط، slide up → cancel
-- [ ] **Upload voice note**: ضبط شده رو به عنوان attachment آپلود کن
+- [x] **VoiceNoteRecorder**: کلاس ضبط صدا با MediaRecorder (AAC/M4A)
+- [x] **Hold-to-talk gesture**: Long press روی mic → ضبط، slide up → cancel
+- [x] **Upload voice note**: ضبط شده رو به عنوان attachment آپلود کن
 - [ ] **Elapsed timer**: نمایش مدت ضبط
 - [ ] **Duration limits**: min 0.5s (accidental tap), max 5min
 
@@ -78,24 +78,24 @@ Android: فقط basic `VoiceInputHandler` (Android SpeechRecognizer)
 iOS: `InlineAudioPlayerView` — Telegram-style audio player with scrubber
 Android: هیچی
 
-- [ ] **Audio player UI**: player با play/pause, scrubber, time display
+- [x] **Audio player UI**: player با play/pause, scrubber, time display
 - [ ] **AVAudioPlayer equivalent**: استفاده از MediaPlayer یا ExoPlayer
-- [ ] **Playback center**: همزمان فقط یه کلیپ پخش شه
+- [x] **Playback center**: همزمان فقط یه کلیپ پخش شه
 - [ ] **Audio in chat**: نمایش audio attachments به صورت inline player
 
 ### 2.3 TTS / Listen (缺失)
 iOS: "Listen" in message context menu + server TTS API
 Android: هیچی
 
-- [ ] **Server TTS**: `POST /api/tts` → دریافت audio و پخش
-- [ ] **Listen button**: در context menu پیام assistant
-- [ ] **Stop listening**: توقف پخش
+- [x] **Server TTS**: `POST /api/tts` → دریافت audio و پخش
+- [x] **Listen button**: در context menu پیام assistant
+- [x] **Stop listening**: توقف پخش
 
 ### 2.4 Server-side STT Enhancement
 iOS: Server-side transcription API
 Android: فقط on-device SpeechRecognizer
 
-- [ ] **STT provider selector**: on-device vs server (تنظیم در settings)
+- [x] **STT provider selector**: on-device vs server (تنظیم در settings)
 - [ ] **Server STT API**: اضافه کردن `POST /api/transcribe`
 
 ---
@@ -105,24 +105,24 @@ Android: فقط on-device SpeechRecognizer
 ### 3.1 Material 3 Overhaul
 - [ ] **FAB**: M3 Extended FAB (tonal surface color, ambient shadow)
 - [ ] **Surface elevation**: M3 tonal elevation (Surface / Surface Container)
-- [ ] **Spacing**: افزایش padding — session list، chat، workspace فشرده‌ان
+- [x] **Spacing**: افزایش padding — session list، chat، workspace فشرده‌ان
 - [ ] **Color system**: جایگزینی yellow accent با M3 color scheme (WCAG fail)
 - [ ] **Typography**: جایگزین monospace metadata با M3 type scale
 
 ### 3.2 Navigation Drawer
 - [ ] آیکون به Recents items اضافه شه
 - [ ] Fix alignment inconsistency
-- [ ] "+ New Chat" از drawer bottom به FAB منتقل شه
+- [x] "+ New Chat" از drawer bottom به FAB منتقل شه
 
 ### 3.3 Chat Screen
 - [ ] Composer input area: افزایش height و padding
 - [ ] Fix low-contrast text input boundary
-- [ ] Streaming text fade-in animation
-- [ ] Context window indicator
-- [ ] Math/LaTeX rendering
-- [ ] Link previews
-- [ ] RTL layout support
-- [ ] Marker message cards
+- [x] Streaming text fade-in animation
+- [x] Context window indicator
+- [x] Math/LaTeX rendering
+- [x] Link previews
+- [x] RTL layout support
+- [x] Marker message cards
 
 ### 3.4 Model Picker
 - [ ] حذف "terminal" controls مبهم
@@ -146,24 +146,24 @@ Android: فقط on-device SpeechRecognizer
 
 ### 4.1 Git Write Actions
 - [ ] Commit, discard, checkout, push, pull
-- [ ] Branch picker, diff viewer, inline commit
+- [x] Branch picker, diff viewer, inline commit
 - [ ] Turn-level changes card
 
 ### 4.2 Kanban Board
-- [ ] Kanban feature state, card editor, card detail view
+- [x] Kanban feature state, card editor, card detail view
 - [ ] Real-time event stream
 
 ### 4.3 Providers Management
-- [ ] Providers list screen + health indicators
+- [x] Providers list screen + health indicators
 
 ### 4.4 Model Favorites
-- [ ] Favorite/unfavorite models, favorites section in picker
+- [x] Favorite/unfavorite models, favorites section in picker
 
 ### 4.5 Session Export
-- [ ] Export as markdown/text, share via Android share sheet
+- [x] Export as markdown/text, share via Android share sheet
 
 ### 4.6 Settings: 15+ Missing Toggles
-- [ ] Default Model Picker (full screen)
+- [x] Default Model Picker (full screen)
 - [ ] Default Profile Picker
 - [ ] CLI/Claude Code/Cron/Subagent Sessions toggles
 - [ ] Message Count, Workspace display toggles
@@ -172,7 +172,7 @@ Android: فقط on-device SpeechRecognizer
 - [ ] Response Timestamps toggle
 - [ ] Wrap Code Block Lines toggle
 - [ ] Hide Attachment Paths toggle
-- [ ] Identity editor (display name + initials)
+- [x] Identity editor (display name + initials)
 - [ ] Archived Sessions screen
 - [ ] Primary action tint toggle
 - [ ] Streaming Lab (debug)
@@ -182,21 +182,21 @@ Android: فقط on-device SpeechRecognizer
 - [ ] Tailscale guide
 
 ### 4.8 File Preview & Export
-- [ ] In-app file preview (text, images, PDF)
-- [ ] File export/share
+- [x] In-app file preview (text, images, PDF)
+- [x] File export/share
 
 ### 4.9 App Shortcuts (Android)
-- [ ] Android App Shortcuts for "New Chat"
-- [ ] Quick Settings tile
+- [x] Android App Shortcuts for "New Chat"
+- [x] Quick Settings tile
 
 ### 4.10 Session Display
 - [ ] Session row components (consistent styling)
-- [ ] Session haptics
+- [x] Session haptics
 - [ ] Session navigation state
 
 ### 4.11 Haptic Feedback
-- [ ] HapticButton equivalent (Android VibrationEffect)
-- [ ] ChatHaptics for interactions
+- [x] HapticButton equivalent (Android VibrationEffect)
+- [x] ChatHaptics for interactions
 
 ---
 
@@ -204,10 +204,10 @@ Android: فقط on-device SpeechRecognizer
 
 ### 5.1 Streaming
 - [ ] Stream reconnect with enhanced replay
-- [ ] Context window compression indicator
+- [x] Context window compression indicator
 
 ### 5.2 Chat
-- [ ] Tool activity group view
+- [x] Tool activity group view
 - [ ] Goal controls
 - [ ] Pending action coordinator
 

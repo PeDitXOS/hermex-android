@@ -80,8 +80,21 @@ import com.hermex.android.tasks.TaskDetailScreen
 import com.hermex.android.tasks.TaskDetailViewModel
 import com.hermex.android.tasks.TasksScreen
 import com.hermex.android.tasks.TasksViewModel
+import com.hermex.android.ui.theme.ThemePickerScreen
+import com.hermex.android.ui.theme.AppTheme
+import com.hermex.android.workspace.GitActionsMenu
+import com.hermex.android.workspace.GitCommitScreen
+import com.hermex.android.workspace.KanbanBoardScreen
 import com.hermex.android.workspace.WorkspaceScreen
 import com.hermex.android.workspace.WorkspaceViewModel
+import com.hermex.android.settings.ArchivedSessionsScreen
+import com.hermex.android.settings.DefaultModelPickerScreen
+import com.hermex.android.settings.DefaultProfilePickerScreen
+import com.hermex.android.settings.IdentityEditorScreen
+import com.hermex.android.settings.ModelCatalogGroup
+import com.hermex.android.settings.ProvidersScreen
+import com.hermex.android.core.network.dto.KanbanCard
+import com.hermex.android.core.network.dto.SessionSummary
 import java.net.URLDecoder
 import java.net.URLEncoder
 import kotlinx.coroutines.flow.StateFlow
@@ -142,6 +155,15 @@ private object Routes {
     const val DEFAULT_MODEL = "settings/defaultModel"
     const val CUSTOM_HEADERS = "settings/customHeaders"
     const val SERVERS = "settings/servers"
+    const val GIT_COMMIT = "git_commit"
+    const val GIT_ACTIONS = "git_actions"
+    const val KANBAN = "kanban"
+    const val PROVIDERS = "providers"
+    const val THEME_PICKER = "theme_picker"
+    const val IDENTITY_EDITOR = "identity_editor"
+    const val ARCHIVED_SESSIONS = "archived_sessions"
+    const val MODEL_PICKER = "model_picker"
+    const val PROFILE_PICKER = "profile_picker"
 }
 
 /**
@@ -221,6 +243,15 @@ fun HermexNavGraph(
     val onOpenProjects: () -> Unit = { navController.navigate(Routes.PROJECTS) }
     val onOpenInsights: () -> Unit = { navController.navigate(Routes.INSIGHTS) }
     val onOpenSettings: () -> Unit = { navController.navigate(Routes.SETTINGS) }
+    val onOpenGitCommit: () -> Unit = { navController.navigate(Routes.GIT_COMMIT) }
+    val onOpenGitActions: () -> Unit = { navController.navigate(Routes.GIT_ACTIONS) }
+    val onOpenKanban: () -> Unit = { navController.navigate(Routes.KANBAN) }
+    val onOpenProviders: () -> Unit = { navController.navigate(Routes.PROVIDERS) }
+    val onOpenThemePicker: () -> Unit = { navController.navigate(Routes.THEME_PICKER) }
+    val onOpenIdentityEditor: () -> Unit = { navController.navigate(Routes.IDENTITY_EDITOR) }
+    val onOpenArchivedSessions: () -> Unit = { navController.navigate(Routes.ARCHIVED_SESSIONS) }
+    val onOpenModelPicker: () -> Unit = { navController.navigate(Routes.MODEL_PICKER) }
+    val onOpenProfilePicker: () -> Unit = { navController.navigate(Routes.PROFILE_PICKER) }
 
     val startDestination = if (authState is AuthState.LoggedIn) Routes.SESSION_LIST else Routes.ONBOARDING
 
@@ -559,10 +590,7 @@ fun HermexNavGraph(
                     serverBaseUrl = appContainer.authRepository.activeServerBaseUrl(),
                 )
             }
-            composable(
-                route = Routes.FILES_PATTERN,
-                arguments = listOf(navArgument("sessionId") { type = NavType.StringType }),
-            ) { backStackEntry ->
+            composable(Routes.FILES_PATTERN, arguments = listOf(navArgument("sessionId") { type = NavType.StringType })) { backStackEntry ->
                 val encodedSessionId = backStackEntry.arguments?.getString("sessionId").orEmpty()
                 val sessionId = URLDecoder.decode(encodedSessionId, "UTF-8")
                 val viewModel: WorkspaceViewModel = viewModel(
@@ -575,15 +603,75 @@ fun HermexNavGraph(
                     modifier = Modifier.fillMaxSize(),
                 )
             }
-            composable("git_commit") { /* GitCommitScreen */ }
-            composable("git_actions") { /* GitActionsMenu */ }
-            composable("kanban") { /* KanbanBoardScreen */ }
-            composable("providers") { /* ProvidersScreen */ }
-            composable("theme_picker") { /* ThemePickerScreen */ }
-            composable("identity_editor") { /* IdentityEditorScreen */ }
-            composable("archived_sessions") { /* ArchivedSessionsScreen */ }
-            composable("model_picker") { /* DefaultModelPickerScreen */ }
-            composable("profile_picker") { /* DefaultProfilePickerScreen */ }
+            composable(Routes.GIT_COMMIT) {
+                GitCommitScreen(
+                    sessionId = "", // Will be passed from caller
+                    onCommit = { },
+                    onBack = { navController.popBackStack() },
+                )
+            }
+            composable(Routes.GIT_ACTIONS) {
+                GitActionsMenu(
+                    onCommit = { },
+                    onPush = { },
+                    onPull = { },
+                    onCheckout = { },
+                    onDiscard = { },
+                )
+            }
+            composable(Routes.KANBAN) {
+                KanbanBoardScreen(
+                    columns = emptyMap(),
+                    onCardClick = { },
+                    onAddCard = { },
+                )
+            }
+            composable(Routes.PROVIDERS) {
+                ProvidersScreen(
+                    providers = emptyList(),
+                    onBack = { navController.popBackStack() },
+                )
+            }
+            composable(Routes.THEME_PICKER) {
+                ThemePickerScreen(
+                    currentTheme = AppTheme.System,
+                    onThemeSelected = { },
+                    onDismiss = { navController.popBackStack() },
+                )
+            }
+            composable(Routes.IDENTITY_EDITOR) {
+                IdentityEditorScreen(
+                    displayName = "",
+                    initials = "",
+                    onDisplayNameChange = { },
+                    onInitialsChange = { },
+                    onSave = { navController.popBackStack() },
+                    onBack = { navController.popBackStack() },
+                )
+            }
+            composable(Routes.ARCHIVED_SESSIONS) {
+                ArchivedSessionsScreen(
+                    archivedSessions = emptyList(),
+                    onSessionClick = { },
+                    onBack = { navController.popBackStack() },
+                )
+            }
+            composable(Routes.MODEL_PICKER) {
+                DefaultModelPickerScreen(
+                    modelGroups = emptyList(),
+                    currentModel = null,
+                    onModelSelected = { _, _ -> },
+                    onDismiss = { navController.popBackStack() },
+                )
+            }
+            composable(Routes.PROFILE_PICKER) {
+                DefaultProfilePickerScreen(
+                    profiles = emptyList(),
+                    currentProfile = null,
+                    onProfileSelected = { },
+                    onDismiss = { navController.popBackStack() },
+                )
+            }
         }
     }
 
