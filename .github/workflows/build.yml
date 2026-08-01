@@ -4,9 +4,10 @@ on:
   push:
     branches: [ feature/ios-parity ]
     tags: [ 'v*' ]
+  workflow_dispatch:
 
 env:
-  VERSION_NAME: "1.0.0"
+  VERSION_NAME: "1.0.1"
 
 jobs:
   build:
@@ -30,7 +31,6 @@ jobs:
       - name: Calculate version code
         id: version
         run: |
-          # Count total commits for version code
           VERSION_CODE=$(git rev-list --count HEAD)
           echo "version_code=$VERSION_CODE" >> $GITHUB_OUTPUT
           echo "Version Code: $VERSION_CODE"
