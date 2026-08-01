@@ -67,12 +67,11 @@ fun ArchivedSessionsScreen(
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                items(archivedSessions, key = { it.id }) { session ->
+                items(archivedSessions, key = { it.sessionId }) { session ->
                     Surface(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { onSessionClick(session.id) },
-                        shape = MaterialTheme.shapes.medium,
+                            .clickable { onSessionClick(session.sessionId ?: "") },\n                        shape = MaterialTheme.shapes.medium,
                         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
                     ) {
                         Column(modifier = Modifier.padding(16.dp)) {
@@ -80,9 +79,9 @@ fun ArchivedSessionsScreen(
                                 text = session.title ?: "Untitled",
                                 style = MaterialTheme.typography.bodyLarge,
                             )
-                            if (session.projectName != null) {
+                            if (session.workspace != null) {
                                 Text(
-                                    text = session.projectName,
+                                    text = session.workspace,
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )

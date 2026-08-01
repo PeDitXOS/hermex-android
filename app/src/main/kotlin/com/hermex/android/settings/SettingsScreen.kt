@@ -402,12 +402,12 @@ fun SettingsScreen(
                         showCliSessions = uiState.showCliSessions,
                         showClaudeCodeSessions = uiState.showClaudeCodeSessions,
                         showSubagentSessions = uiState.showSubagentSessions,
-                        onToggleMessageCount = viewModel::toggleSessionMessageCount,
-                        onToggleWorkspace = viewModel::toggleSessionWorkspace,
-                        onToggleCronSessions = viewModel::toggleCronSessions,
-                        onToggleCliSessions = viewModel::toggleCliSessions,
-                        onToggleClaudeCodeSessions = viewModel::toggleClaudeCodeSessions,
-                        onToggleSubagentSessions = viewModel::setShowSubagentSessions,
+                        onToggleMessageCount = { viewModel.toggleSessionMessageCount() },
+                        onToggleWorkspace = { viewModel.toggleSessionWorkspace() },
+                        onToggleCronSessions = { viewModel.toggleCronSessions() },
+                        onToggleCliSessions = { viewModel.toggleCliSessions() },
+                        onToggleClaudeCodeSessions = { viewModel.toggleClaudeCodeSessions() },
+                        onToggleSubagentSessions = { viewModel.setShowSubagentSessions(!uiState.showSubagentSessions) },
                     )
                 }
 
@@ -423,14 +423,14 @@ fun SettingsScreen(
                         wrapCodeBlocks = uiState.wrapsCodeBlockLines,
                         rtlLayout = uiState.rtlChatLayoutEnabled,
                         hideAttachmentPaths = uiState.hidesAttachmentPaths,
-                        onToggleThinkingTools = viewModel::toggleThinkingAndToolCards,
-                        onToggleThinkingExpanded = viewModel::toggleThinkingExpanded,
-                        onToggleToolExpanded = viewModel::toggleToolExpanded,
-                        onToggleStreamAnimation = viewModel::toggleStreamedTextAnimation,
-                        onToggleTimestamps = viewModel::toggleResponseTimestamps,
-                        onToggleWrapCode = viewModel::toggleWrapCodeBlocks,
-                        onToggleRtl = viewModel::toggleRtlChat,
-                        onToggleHidePaths = viewModel::toggleHideAttachmentPaths,
+                        onToggleThinkingTools = { viewModel.toggleThinkingAndToolCards() },
+                        onToggleThinkingExpanded = { viewModel.toggleThinkingExpanded() },
+                        onToggleToolExpanded = { viewModel.toggleToolExpanded() },
+                        onToggleStreamAnimation = { viewModel.toggleStreamedTextAnimation() },
+                        onToggleTimestamps = { viewModel.toggleResponseTimestamps() },
+                        onToggleWrapCode = { viewModel.toggleWrapCodeBlocks() },
+                        onToggleRtl = { viewModel.toggleRtlChat() },
+                        onToggleHidePaths = { viewModel.toggleHideAttachmentPaths() },
                     )
                 }
 
@@ -441,8 +441,8 @@ fun SettingsScreen(
                         hapticsEnabled = uiState.isHapticsEnabled,
                         streamingBehavior = uiState.streamingSendBehavior,
                         sttProvider = "on_device",
-                        onToggleHaptics = viewModel::toggleHaptics,
-                        onSetStreamingBehavior = viewModel::setStreamingSendBehavior,
+                        onToggleHaptics = { viewModel.toggleHaptics() },
+                        onSetStreamingBehavior = { viewModel.setStreamingSendBehavior(it) },
                         onSetSttProvider = { _ -> },
                     )
                 }

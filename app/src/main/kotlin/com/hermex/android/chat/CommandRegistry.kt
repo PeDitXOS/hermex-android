@@ -8,7 +8,6 @@ import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.Category
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Compress
-import androidx.compose.material.icons.filled.Continue
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Description
@@ -82,7 +81,7 @@ object CommandRegistry {
         CommandSuggestion("/undo", "Undo last message", Icons.Filled.Undo, CommandAction.Undo),
         CommandSuggestion("/fork", "Fork conversation from here", Icons.Filled.AccountTree, CommandAction.Fork),
         CommandSuggestion("/branch", "Branch session", Icons.Filled.AccountTree, CommandAction.Branch),
-        CommandSuggestion("/continue", "Continue the last response", Icons.Filled.Continue, CommandAction.Continue),
+        CommandSuggestion("\/continue", "Continue the last response", Icons.Filled.PlayArrow, CommandAction.Continue),
         CommandSuggestion("/summarize", "Summarize the conversation", Icons.Filled.Summarize, CommandAction.Summarize),
         CommandSuggestion("/compress", "Compress conversation context", Icons.Filled.Compress, CommandAction.Compress),
         CommandSuggestion("/compact", "Compact the conversation", Icons.Filled.Compress, CommandAction.Compact),

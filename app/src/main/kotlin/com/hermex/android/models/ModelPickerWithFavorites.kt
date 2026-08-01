@@ -71,9 +71,9 @@ fun ModelPickerWithFavorites(
                         Text("Favorites", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(vertical = 8.dp))
                     }
                     modelGroups.forEach { group ->
-                        group.models.filter { it.name in favorites }.filter { searchQuery.isBlank() || it.name.contains(searchQuery, ignoreCase = true) }.forEach { model ->
-                            item(key = "fav_${model.name}") {
-                                ModelRow(model.name, group.provider, model.name == currentModel, true, onModelSelected, onToggleFavorite)
+                        group.models.filter { it.id in favorites }.filter { searchQuery.isBlank() || it.displayName.contains(searchQuery, ignoreCase = true) }.forEach { model ->
+                            item(key = "fav_${model.id}") {
+                                ModelRow(model.id, group.providerId, model.id == currentModel, true, onModelSelected, onToggleFavorite)
                             }
                         }
                     }
@@ -82,15 +82,15 @@ fun ModelPickerWithFavorites(
                 // All models by provider
                 modelGroups.forEach { group ->
                     val filteredModels = group.models.filter {
-                        (searchQuery.isBlank() || it.name.contains(searchQuery, ignoreCase = true)) &&
-                        (!showFavoritesOnly || it.name in favorites)
+                        (searchQuery.isBlank() || it.displayName.contains(searchQuery, ignoreCase = true)) &&
+                        (!showFavoritesOnly || it.id in favorites)
                     }
                     if (filteredModels.isNotEmpty()) {
-                        item(key = "header_${group.provider}") {
-                            Text(group.provider, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(vertical = 8.dp))
+                        item(key = "header_${group.providerId}") {
+                            Text(group.providerId ?: "Unknown", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(vertical = 8.dp))
                         }
-                        items(filteredModels, key = { it.name }) { model ->
-                            ModelRow(model.name, group.provider, model.name == currentModel, model.name in favorites, onModelSelected, onToggleFavorite)
+                        items(filteredModels, key = { it.id }) { model ->
+                            ModelRow(model.id, group.providerId, model.id == currentModel, model.id in favorites, onModelSelected, onToggleFavorite)
                         }
                     }
                 }
@@ -101,23 +101,23 @@ fun ModelPickerWithFavorites(
 
 @Composable
 private fun ModelRow(
-    name: String,
-    provider: String,
+    id: String,
+    provider: String?,
     isSelected: Boolean,
     isFavorite: Boolean,
     onModelSelected: (String, String?) -> Unit,
     onToggleFavorite: (String) -> Unit,
 ) {
     Surface(
-        modifier = Modifier.fillMaxWidth().clickable { onModelSelected(name, provider) },
+        modifier = Modifier.fillMaxWidth().clickable { onModelSelected(id, provider) },
         color = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f) else MaterialTheme.colorScheme.surface,
     ) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp, horizontal = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(name, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
-            IconButton(onClick = { onToggleFavorite(name) }, modifier = Modifier.size(32.dp)) {
+            Text(id, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
+            IconButton(onClick = { onToggleFavorite(id) }, modifier = Modifier.size(32.dp)) {
                 Icon(
                     if (isFavorite) Icons.Filled.Star else Icons.Filled.StarOutline,
                     contentDescription = "Favorite",
@@ -126,7 +126,7 @@ private fun ModelRow(
                 )
             }
             if (isSelected) {
-                Icon(Icons.Filled.Star, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
+                Icon(Icons.Filled.Check, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
             }
         }
     }

@@ -7,7 +7,7 @@ import com.hermex.android.core.network.dto.MessageAttachment
 
 object AttachmentFileOpener {
 
-    fun openAttachment(context: Context, attachment: MessageAttachment) {
+    fun open(context: Context, attachment: MessageAttachment) {
         val mimeType = attachment.mime ?: "application/octet-stream"
         val url = attachment.path ?: return
 

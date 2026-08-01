@@ -18,9 +18,6 @@ import androidx.compose.ui.unit.dp
 /**
  * Reusable settings toggle row — iOS SettingsToggleRow equivalent.
  * Matches iOS's SettingsCard → SettingsToggleRow pattern.
- * Two signatures supported:
- * 1. With Boolean callback: onCheckedChange: (Boolean) -> Unit
- * 2. With Unit callback (for function references): onCheckedChange: () -> Unit
  */
 @Composable
 fun SettingsToggleRow(
@@ -57,24 +54,6 @@ fun SettingsToggleRow(
             onCheckedChange = onCheckedChange,
         )
     }
-}
-
-/** Overload for function references that take no arguments (e.g., viewModel::toggleX). */
-@Composable
-fun SettingsToggleRow(
-    title: String,
-    subtitle: String? = null,
-    checked: Boolean,
-    onCheckedChange: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    SettingsToggleRow(
-        title = title,
-        subtitle = subtitle,
-        checked = checked,
-        onCheckedChange = { onCheckedChange() },
-        modifier = modifier,
-    )
 }
 
 /**

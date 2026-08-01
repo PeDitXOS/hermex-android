@@ -29,7 +29,7 @@ class InlineAudioPlayer {
     /** Coordinates one-at-a-time playback across multiple players. */
     object PlaybackCenter {
         private var active: InlineAudioPlayer? = null
-        fun playbackWillBegin(for player: InlineAudioPlayer) {
+        fun playbackWillBegin(player: InlineAudioPlayer) {
             active?.pause()
             active = player
         }

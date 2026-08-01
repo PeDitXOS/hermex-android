@@ -1,6 +1,8 @@
 package com.hermex.android.chat
 
+import android.content.Context
 import android.net.Uri
+import android.os.Environment
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.hermex.android.auth.AuthRepository
@@ -33,6 +35,7 @@ import com.hermex.android.core.storage.ChatPreferencesStore
 import com.hermex.android.core.util.HermexLog
 import com.hermex.android.core.util.TtftTracer
 import com.hermex.android.chat.ResponseCompletionNotifier
+import java.io.File
 import java.util.UUID
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -1293,7 +1296,7 @@ class ChatViewModel(
                 val responseBody = safeApiCall { api.tts(textPart, voicePart) }
                 
                 // Write response to temp file and play
-                val tempFile = File(cacheDir, "tts_${message.stableId}.mp3")
+                val tempFile = File(context.cacheDir, "tts_${message.stableId}.mp3")
                 withContext(Dispatchers.IO) {
                     tempFile.outputStream().use { out ->
                         responseBody.byteStream().use { input ->
@@ -1467,6 +1470,37 @@ class ChatViewModel(
                         }
                     }
                 }
+            }
+            is CommandAction.Steer -> {
+                _uiState.update { it.copy(composerText = argument) }
+                sendMessage()
+            }
+            is CommandAction.Reasoning -> {
+                _uiState.update { it.copy(errorMessage = "Use the thinking toggle in settings to show/hide reasoning.") }
+            }
+            is CommandAction.Title -> {
+                // Handled in Title case above
+            }
+            is CommandAction.Personality -> {
+                // Handled in Personality case above
+            }
+            is CommandAction.Queue -> {
+                // Handled in Queue case above
+            }
+            is CommandAction.Btw -> {
+                // Handled in Btw case above
+            }
+            is CommandAction.Skills -> {
+                _uiState.update { it.copy(errorMessage = "Use the skills icon in the drawer to browse skills.") }
+            }
+            is CommandAction.Goal -> {
+                _uiState.update { it.copy(errorMessage = "Use the goal chip in the composer to set a goal.") }
+            }
+            is CommandAction.Model -> {
+                _uiState.update { it.copy(errorMessage = "Use the model chip in the composer to switch models.") }
+            }
+            is CommandAction.Workspace -> {
+                _uiState.update { it.copy(errorMessage = "Use the workspace chip in the composer to switch workspaces.") }
             }
         }
     }

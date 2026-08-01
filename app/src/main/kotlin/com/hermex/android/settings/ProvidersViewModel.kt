@@ -13,18 +13,11 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
-data class ProviderStatus(
-    val name: String,
-    val isConfigured: Boolean,
-    val isHealthy: Boolean,
-    val modelCount: Int,
-)
-
 class ProvidersViewModel(
     private val authRepository: AuthRepository,
 ) : ViewModel() {
-    private val _uiState = MutableStateFlow(ProvidersUiState())
-    val uiState: StateFlow<ProvidersUiState> = _uiState.asStateFlow()
+    private val _uiState = MutableStateFlow(SettingsUiState())
+    val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()
 
     fun loadProviders() {
         viewModelScope.launch {
@@ -41,7 +34,7 @@ class ProvidersViewModel(
                         modelCount = models.size,
                     )
                 }
-                _uiState.update { it.copy(isLoading = false, providers = providers) }
+                _uiState.update { it.copy(isLoading = false) }
             } catch (e: ApiError) {
                 _uiState.update { it.copy(isLoading = false, errorMessage = e.message ?: "Failed to load providers") }
             }
