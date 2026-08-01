@@ -194,6 +194,7 @@ class AppContainer(val context: Context) {
                     isAppInForeground = { this@AppContainer.isAppInForeground },
                 ),
                 AndroidStreamingForegroundController(applicationContext),
+                applicationContext,
             )
         }
     }

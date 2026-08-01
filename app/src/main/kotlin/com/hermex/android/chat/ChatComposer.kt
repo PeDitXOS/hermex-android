@@ -368,6 +368,7 @@ fun ChatComposer(
                     ) {
                         // Mic button — bottom strip, hold to record
                         IconButton(
+                            onClick = {},
                             modifier = Modifier.combinedClickable(
                                 interactionSource = remember { MutableInteractionSource() },
                                 indication = null,

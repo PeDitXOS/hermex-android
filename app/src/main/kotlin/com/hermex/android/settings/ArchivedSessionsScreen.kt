@@ -67,7 +67,7 @@ fun ArchivedSessionsScreen(
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                items(archivedSessions, key = { it.sessionId }) { session ->
+                items(archivedSessions, key = { it.sessionId ?: "" }) { session ->
                     Surface(
                         modifier = Modifier
                             .fillMaxWidth()

@@ -37,7 +37,6 @@ import com.hermex.android.core.util.TtftTracer
 import com.hermex.android.chat.ResponseCompletionNotifier
 import java.io.File
 import java.util.UUID
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -91,6 +90,7 @@ class ChatViewModel(
     /** Injected controller for the chat-stream foreground service. No-op by default so every
      * existing test/call site keeps compiling unchanged. */
     private val streamingForegroundController: StreamingForegroundController = StreamingForegroundController.NoOp,
+    private val context: Context, // Required for TTS file operations
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(ChatUiState())
     val uiState: StateFlow<ChatUiState> = _uiState.asStateFlow()

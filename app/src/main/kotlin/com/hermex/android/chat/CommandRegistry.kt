@@ -81,7 +81,7 @@ object CommandRegistry {
         CommandSuggestion("/undo", "Undo last message", Icons.Filled.Undo, CommandAction.Undo),
         CommandSuggestion("/fork", "Fork conversation from here", Icons.Filled.AccountTree, CommandAction.Fork),
         CommandSuggestion("/branch", "Branch session", Icons.Filled.AccountTree, CommandAction.Branch),
-        CommandSuggestion("\/continue", "Continue the last response", Icons.Filled.PlayArrow, CommandAction.Continue),
+        CommandSuggestion("/continue", "Continue the last response", Icons.Filled.PlayArrow, CommandAction.Continue),
         CommandSuggestion("/summarize", "Summarize the conversation", Icons.Filled.Summarize, CommandAction.Summarize),
         CommandSuggestion("/compress", "Compress conversation context", Icons.Filled.Compress, CommandAction.Compress),
         CommandSuggestion("/compact", "Compact the conversation", Icons.Filled.Compress, CommandAction.Compact),

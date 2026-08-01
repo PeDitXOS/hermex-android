@@ -91,9 +91,9 @@ import com.hermex.android.settings.ArchivedSessionsScreen
 import com.hermex.android.settings.DefaultModelPickerScreen
 import com.hermex.android.settings.DefaultProfilePickerScreen
 import com.hermex.android.settings.IdentityEditorScreen
-import com.hermex.android.settings.ModelCatalogGroup
 import com.hermex.android.settings.ProvidersScreen
 import com.hermex.android.core.network.dto.KanbanCard
+import com.hermex.android.core.network.dto.ModelCatalogGroup
 import com.hermex.android.core.network.dto.SessionSummary
 import java.net.URLDecoder
 import java.net.URLEncoder
