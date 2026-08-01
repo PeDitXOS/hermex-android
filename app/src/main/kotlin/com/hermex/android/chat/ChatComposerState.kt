@@ -17,8 +17,8 @@ data class ChatComposerState(
     val isUpdatingComposerConfiguration: Boolean,
     val isUploadingAttachment: Boolean,
 ) {
-    /** Matches the pre-existing `OutlinedTextField(enabled = !isSending && !isStreaming)` check. */
-    val isTextFieldEnabled: Boolean get() = !isSending && !isStreaming
+    /** Text field is always enabled — users can type/paste during streaming for steer. */
+    val isTextFieldEnabled: Boolean get() = !isSending
 
     /** Single source of truth for which control occupies the composer's trailing slot -- Stop
      * wins whenever streaming, the sending spinner only shows in the remaining case where a send
@@ -38,9 +38,8 @@ data class ChatComposerState(
     val showStopButton: Boolean get() = trailingAction == TrailingAction.STOP
     val showSendingSpinner: Boolean get() = trailingAction == TrailingAction.SENDING
 
-    /** Matches the pre-existing `IconButton(onClick = onSend, enabled = text.isNotBlank())`,
-     * which only ever rendered in that same fallback case above. */
-    val canSend: Boolean get() = trailingAction == TrailingAction.SEND && text.isNotBlank()
+    /** Can send when not sending already. During streaming, sending triggers steer. */
+    val canSend: Boolean get() = !isSending && text.isNotBlank()
 
     val isProfileSelectorLoading: Boolean get() = isSwitchingProfile
     val isModelSelectorLoading: Boolean get() = isUpdatingComposerConfiguration

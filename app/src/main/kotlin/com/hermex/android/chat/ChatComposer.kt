@@ -294,7 +294,7 @@ fun ChatComposer(
                                 }
                             },
                             modifier = Modifier.weight(1f),
-                            placeholder = { Text("Message Hermex…") },
+                            placeholder = { Text(if (composerState.isStreaming) "Steer the response…" else "Message Hermex…") },
                             enabled = composerState.isTextFieldEnabled,
                             maxLines = 5,
                             shape = RoundedCornerShape(HermexRadii.Composer),
@@ -337,7 +337,10 @@ fun ChatComposer(
                                 }
                                 composerState.showSendingSpinner -> CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
                                 else -> FilledIconButton(onClick = actions.onSend, enabled = composerState.canSend) {
-                                    Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send")
+                                    Icon(
+                                        Icons.AutoMirrored.Filled.Send,
+                                        contentDescription = if (composerState.isStreaming) "Steer" else "Send",
+                                    )
                                 }
                             }
                         }

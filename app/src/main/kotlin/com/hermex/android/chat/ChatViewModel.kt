@@ -510,7 +510,14 @@ class ChatViewModel(
         val stateAtTap = _uiState.value
         val originalComposerText = stateAtTap.composerText
         val text = originalComposerText.trim()
-        if (text.isEmpty() || stateAtTap.isSending || stateAtTap.isStreaming) return
+        if (text.isEmpty() || stateAtTap.isSending) return
+
+        // During streaming, sending triggers steer instead of a new message
+        if (stateAtTap.isStreaming) {
+            steer(text)
+            _uiState.update { it.copy(composerText = "") }
+            return
+        }
 
         // Handle slash commands before sending
         val matchResult = CommandRegistry.matchCommand(text)

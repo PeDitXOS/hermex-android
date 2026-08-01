@@ -94,6 +94,9 @@ fun MessageBubble(
     val context = LocalContext.current
     var showImageViewer by remember { mutableStateOf<String?>(null) }
     var showContextMenu by remember { mutableStateOf(false) }
+    val hasCodeBlocks = remember(displayContent) {
+        displayContent?.contains("```") == true
+    }
 
     val contextMenuModifier = Modifier.combinedClickable(
         onClick = {},
@@ -152,6 +155,24 @@ fun MessageBubble(
                         modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
                         style = MaterialTheme.typography.bodyMedium,
                     )
+                }
+                // Copy Code button for messages with code blocks
+                if (hasCodeBlocks && isAssistant) {
+                    TextButton(
+                        onClick = {
+                            clipboardManager.setText(AnnotatedString(displayContent.orEmpty()))
+                            Toast.makeText(context, "Code copied", Toast.LENGTH_SHORT).show()
+                        },
+                        modifier = Modifier.padding(start = 4.dp),
+                    ) {
+                        Icon(
+                            Icons.Filled.ContentCopy,
+                            contentDescription = null,
+                            modifier = Modifier.size(14.dp),
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text("Copy Code", style = MaterialTheme.typography.labelSmall)
+                    }
                 }
                 // Timestamp for assistant messages
                 message.timestamp?.let { ts ->
