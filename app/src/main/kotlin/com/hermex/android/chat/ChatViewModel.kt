@@ -1117,6 +1117,26 @@ class ChatViewModel(
         }
     }
 
+    /** Edit with sheet: shows the edit sheet, then truncates and resends. */
+    fun editMessageWithSheet(index: Int, newText: String) {
+        val message = _uiState.value.messages.getOrNull(index) ?: return
+        if (message.role != "user") return
+        if (newText.isBlank()) return
+        viewModelScope.launch {
+            try {
+                val api = authRepository.apiForActiveServer() ?: throw ApiError.Network(Exception("Not signed in"))
+                if (activeStreamId != null) cancelStream()
+                awaitPendingCancel()
+                safeApiCall { api.truncateSession(TruncateSessionRequest(session_id = sessionId, keep_count = index)) }
+                _uiState.update { it.copy(messages = it.messages.take(index), composerText = newText) }
+                // Auto-send the edited message
+                sendMessage()
+            } catch (e: ApiError) {
+                _uiState.update { it.copy(errorMessage = e.message ?: "Could not edit message.") }
+            }
+        }
+    }
+
     fun retryLastMessage() {
         val messages = _uiState.value.messages
         val lastUserIdx = messages.indexOfLast { it.role == "user" }
