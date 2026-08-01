@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="new_chat"
+        android:shortcutShortLabel="New Chat"
+        android:shortcutLongLabel="Start New Chat"
+        android:enabled="true"
+        android:icon="@android:drawable/ic_menu_send">
+        <intent
+            android:action="com.hermex.android.ACTION_NEW_CHAT"
+            android:targetPackage="com.hermex.android"
+            android:targetClass="com.hermex.android.MainActivity" />
+    </shortcut>
+    <shortcut
+        android:shortcutId="new_chat_voice"
+        android:shortcutShortLabel="Voice Chat"
+        android:shortcutLongLabel="New Chat with Voice"
+        android:enabled="true"
+        android:icon="@android:drawable/ic_btn_speak_now">
+        <intent
+            android:action="com.hermex.android.ACTION_NEW_CHAT_VOICE"
+            android:targetPackage="com.hermex.android"
+            android:targetClass="com.hermex.android.MainActivity" />
+    </shortcut>
+</shortcuts>

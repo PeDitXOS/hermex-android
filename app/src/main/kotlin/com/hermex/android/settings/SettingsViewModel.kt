@@ -125,6 +125,23 @@ class SettingsViewModel(
         onNotificationsChanged?.invoke(value)
     }
 
+    fun toggleSessionMessageCount() { _uiState.update { it.copy(showSessionMessageCount = !it.showSessionMessageCount) } }
+    fun toggleSessionWorkspace() { _uiState.update { it.copy(showSessionWorkspace = !it.showSessionWorkspace) } }
+    fun toggleCronSessions() { _uiState.update { it.copy(showCronSessions = !it.showCronSessions) } }
+    fun toggleCliSessions() { _uiState.update { it.copy(showCliSessions = !it.showCliSessions) } }
+    fun toggleClaudeCodeSessions() { _uiState.update { it.copy(showClaudeCodeSessions = !it.showClaudeCodeSessions) } }
+    fun toggleThinkingAndToolCards() { _uiState.update { it.copy(showsThinkingAndToolCards = !it.showsThinkingAndToolCards) } }
+    fun toggleThinkingExpanded() { _uiState.update { it.copy(thinkingCardsStartExpanded = !it.thinkingCardsStartExpanded) } }
+    fun toggleToolExpanded() { _uiState.update { it.copy(toolCardsStartExpanded = !it.toolCardsStartExpanded) } }
+    fun toggleStreamedTextAnimation() { _uiState.update { it.copy(isStreamedTextAnimationEnabled = !it.isStreamedTextAnimationEnabled) } }
+    fun toggleResponseTimestamps() { _uiState.update { it.copy(showsAssistantTurnTimestamps = !it.showsAssistantTurnTimestamps) } }
+    fun toggleWrapCodeBlocks() { _uiState.update { it.copy(wrapsCodeBlockLines = !it.wrapsCodeBlockLines) } }
+    fun toggleRtlChat() { _uiState.update { it.copy(rtlChatLayoutEnabled = !it.rtlChatLayoutEnabled) } }
+    fun toggleHideAttachmentPaths() { _uiState.update { it.copy(hidesAttachmentPaths = !it.hidesAttachmentPaths) } }
+    fun toggleTintPrimaryActions() { _uiState.update { it.copy(tintsPrimaryActions = !it.tintsPrimaryActions) } }
+    fun toggleHaptics() { _uiState.update { it.copy(isHapticsEnabled = !it.isHapticsEnabled) } }
+    fun setStreamingSendBehavior(behavior: String) { _uiState.update { it.copy(streamingSendBehavior = behavior) } }
+
     /** Doesn't need to navigate or flip [SettingsUiState.isSigningOut] back -- once
      * [AuthRepository.state] flips to `Unconfigured`, `HermexNavGraph` routes back to Onboarding
      * and unmounts this screen. */

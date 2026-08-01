@@ -575,6 +575,15 @@ fun HermexNavGraph(
                     modifier = Modifier.fillMaxSize(),
                 )
             }
+            composable("git_commit") { /* GitCommitScreen */ }
+            composable("git_actions") { /* GitActionsMenu */ }
+            composable("kanban") { /* KanbanBoardScreen */ }
+            composable("providers") { /* ProvidersScreen */ }
+            composable("theme_picker") { /* ThemePickerScreen */ }
+            composable("identity_editor") { /* IdentityEditorScreen */ }
+            composable("archived_sessions") { /* ArchivedSessionsScreen */ }
+            composable("model_picker") { /* DefaultModelPickerScreen */ }
+            composable("profile_picker") { /* DefaultProfilePickerScreen */ }
         }
     }
 

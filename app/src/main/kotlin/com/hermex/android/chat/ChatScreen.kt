@@ -188,7 +188,7 @@ fun ChatScreen(
                                 text = { Text("Share") },
                                 onClick = {
                                     showSessionMenu = false
-                                    sessionId?.let { chatShareSession(context, it, sessionTitle ?: "Session") }
+                                    sessionId?.let { chatShareSession(context, it, sessionTitle ?: "Session", uiState.messages) }
                                 },
                                 leadingIcon = { Icon(Icons.Filled.Share, null) },
                             )
@@ -430,6 +430,9 @@ fun ChatScreen(
                                         onFork = if (canMutateHistory) {
                                             { viewModel.forkFromMessage() }
                                         } else null,
+                                        onListen = if (message.role == "assistant") {
+                                            { viewModel.toggleListen(index) }
+                                        } else null,
                                     )
                                 }
                             }
@@ -614,14 +617,21 @@ fun ChatScreen(
     } // end outer Box
 }
 
-private fun chatShareSession(context: Context, sessionId: String, sessionTitle: String) {
-    val uri = HermexNotificationRoutes.session(sessionId)
-    val intent = Intent(Intent.ACTION_SEND).apply {
-        type = "text/plain"
-        putExtra(Intent.EXTRA_TEXT, uri)
-        putExtra(Intent.EXTRA_SUBJECT, sessionTitle)
+private fun chatShareSession(context: Context, sessionId: String, sessionTitle: String, messages: List<com.hermex.android.core.network.dto.ChatMessage>) {
+    if (messages.isNotEmpty()) {
+        // Export full conversation as markdown
+        val file = SessionExporter.exportToMarkdown(context, sessionTitle, messages)
+        SessionExporter.shareFile(context, file)
+    } else {
+        // Fallback: share deep link
+        val uri = HermexNotificationRoutes.session(sessionId)
+        val intent = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_TEXT, uri)
+            putExtra(Intent.EXTRA_SUBJECT, sessionTitle)
+        }
+        context.startActivity(Intent.createChooser(intent, "Share Session"))
     }
-    context.startActivity(Intent.createChooser(intent, "Share Session"))
 }
 
 /** A small floating circular button for the transcript's jump-to-top/jump-to-bottom controls --
