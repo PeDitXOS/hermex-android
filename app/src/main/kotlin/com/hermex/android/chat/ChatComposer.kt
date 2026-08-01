@@ -291,37 +291,6 @@ fun ChatComposer(
 
                 Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        // Mic button — left of text field
-                        IconButton(
-                            onClick = {
-                                if (isRecording) {
-                                    voiceHandler.stopListening()
-                                    isRecording = false
-                                } else {
-                                    val permissionState = ContextCompat.checkSelfPermission(context, recordAudioPermission)
-                                    if (permissionState == android.content.pm.PackageManager.PERMISSION_GRANTED) {
-                                        voiceHandler.startListening(
-                                            onResult = { text ->
-                                                actions.onTextChanged(composerState.text + text)
-                                                isRecording = false
-                                            },
-                                            onError = {
-                                                isRecording = false
-                                            },
-                                        )
-                                        isRecording = true
-                                    } else {
-                                        permissionLauncher.launch(recordAudioPermission)
-                                    }
-                                }
-                            },
-                        ) {
-                            Icon(
-                                if (isRecording) Icons.Filled.Mic else Icons.Filled.KeyboardVoice,
-                                contentDescription = if (isRecording) "Stop recording" else "Voice input",
-                                tint = if (isRecording) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
                         OutlinedTextField(
                             value = composerState.text,
                             onValueChange = { newValue ->
@@ -345,7 +314,55 @@ fun ChatComposer(
                                 focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
                             ),
                         )
-                        Spacer(Modifier.width(8.dp))
+                        Spacer(Modifier.width(4.dp))
+                        // Mic button — between text field and send button
+                        IconButton(
+                            modifier = Modifier.combinedClickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null,
+                                onClick = {
+                                    if (isRecording) {
+                                        val note = voiceRecorder.finish()
+                                        isRecording = false
+                                        if (note != null) actions.onSendVoiceNote(note.file, note.filename)
+                                    }
+                                },
+                                onLongClick = {
+                                    if (!isRecording) {
+                                        val perm = ContextCompat.checkSelfPermission(context, recordAudioPermission)
+                                        if (perm == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                                            voiceRecorder.begin(coroutineScope)
+                                            isRecording = true
+                                        } else {
+                                            permissionLauncher.launch(recordAudioPermission)
+                                        }
+                                    }
+                                },
+                            ),
+                        ) {
+                            if (isRecording) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        Icons.Filled.Mic,
+                                        contentDescription = "Stop recording",
+                                        tint = MaterialTheme.colorScheme.error,
+                                    )
+                                    Spacer(Modifier.width(4.dp))
+                                    Text(
+                                        text = formatElapsed(voiceRecordingElapsedMs),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.error,
+                                    )
+                                }
+                            } else {
+                                Icon(
+                                    Icons.Filled.KeyboardVoice,
+                                    contentDescription = "Hold to record voice note",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                        Spacer(Modifier.width(4.dp))
                         // Fixed-size slot for the trailing action -- Stop/Send (both IconButton-
                         // family, 48dp by default) and the bare sending spinner previously had no
                         // shared box, so the control visibly jumped size as the composer moved
@@ -696,11 +713,19 @@ private fun ModelSelectorButton(
                                 menuExpanded = false
                                 onSelectModel(option)
                             },
-                        )
-                    }
-                }
-            }
-        }
-    }
+                            )
+                            }
+                            }
+                            }
+                            }
+                            }
+
+                            /** Format elapsed milliseconds as m:ss for voice recording display. */
+                            private fun formatElapsed(ms: Long): String {
+                            val totalSec = ms / 1000
+                            val min = totalSec / 60
+                            val sec = totalSec % 60
+                            return "$min:${sec.toString().padStart(2, '0')}"
+                            }
 }
 
