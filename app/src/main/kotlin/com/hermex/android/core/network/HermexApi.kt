@@ -1,6 +1,10 @@
 package com.hermex.android.core.network
 
 import com.hermex.android.core.network.dto.ApprovalPendingResponse
+import com.hermex.android.core.network.dto.BranchSessionRequest
+import com.hermex.android.core.network.dto.BranchSessionResponse
+import com.hermex.android.core.network.dto.ChatSteerRequest
+import com.hermex.android.core.network.dto.ChatSteerResponse
 import com.hermex.android.core.network.dto.ApprovalRespondRequest
 import com.hermex.android.core.network.dto.ApprovalRespondResponse
 import com.hermex.android.core.network.dto.AuthStatusResponse
@@ -23,6 +27,8 @@ import com.hermex.android.core.network.dto.EmptyRequestBody
 import com.hermex.android.core.network.dto.FileSaveRequest
 import com.hermex.android.core.network.dto.FileSaveResponse
 import com.hermex.android.core.network.dto.FileResponse
+import com.hermex.android.core.network.dto.GitCheckoutRequest
+import com.hermex.android.core.network.dto.GitDiscardRequest
 import com.hermex.android.core.network.dto.MoveFileRequest
 import com.hermex.android.core.network.dto.RenameFileRequest
 import com.hermex.android.core.network.dto.GitBranchesResponse
@@ -54,6 +60,8 @@ import com.hermex.android.core.network.dto.SessionResponse
 import com.hermex.android.core.network.dto.SessionYoloRequest
 import com.hermex.android.core.network.dto.SessionYoloResponse
 import com.hermex.android.core.network.dto.SessionsResponse
+import com.hermex.android.core.network.dto.TTSRequest
+import com.hermex.android.core.network.dto.TTSResponse
 import com.hermex.android.core.network.dto.SkillDetailResponse
 import com.hermex.android.core.network.dto.SkillsResponse
 import com.hermex.android.core.network.dto.UpdateSessionRequest
@@ -295,4 +303,43 @@ interface HermexApi {
 
     @POST("/api/clarify/respond")
     suspend fun clarifyRespond(@Body request: ClarificationRespondRequest): ClarificationRespondResponse
+
+    @POST("/api/chat/steer")
+    suspend fun chatSteer(@Body body: ChatSteerRequest): ChatSteerResponse
+
+    @POST("/api/chat/branch")
+    suspend fun branchSession(@Body body: BranchSessionRequest): BranchSessionResponse
+
+    @Multipart
+    @POST("/api/tts")
+    suspend fun tts(
+        @Part("text") text: RequestBody,
+        @Part("voice") voice: RequestBody?,
+    ): ResponseBody
+
+    @Multipart
+    @POST("/api/transcribe")
+    suspend fun transcribe(
+        @Part audio: MultipartBody.Part,
+    ): ResponseBody
+
+    @GET("/api/git/commit")
+    suspend fun gitCommit(
+        @Query("session_id") sessionId: String,
+        @Query("message") message: String,
+    ): GenericResponse
+
+    @POST("/api/git/push")
+    suspend fun gitPush(@Body body: SessionIdRequest): GenericResponse
+
+    @POST("/api/git/pull")
+    suspend fun gitPull(@Body body: SessionIdRequest): GenericResponse
+
+    @POST("/api/git/checkout")
+    suspend fun gitCheckout(
+        @Body body: GitCheckoutRequest,
+    ): GenericResponse
+
+    @POST("/api/git/discard")
+    suspend fun gitDiscard(@Body body: GitDiscardRequest): GenericResponse
 }

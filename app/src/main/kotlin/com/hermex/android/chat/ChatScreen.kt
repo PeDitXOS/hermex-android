@@ -427,6 +427,9 @@ fun ChatScreen(
                                         onRegenerate = if (canMutateHistory && message.role != "user" && index == uiState.messages.lastIndex) {
                                             viewModel::regenerate
                                         } else null,
+                                        onFork = if (canMutateHistory) {
+                                            { viewModel.forkFromMessage() }
+                                        } else null,
                                     )
                                 }
                             }

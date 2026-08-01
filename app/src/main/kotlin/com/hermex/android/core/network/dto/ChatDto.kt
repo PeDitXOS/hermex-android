@@ -34,3 +34,39 @@ data class ChatCancelResponse(
     val streamId: String? = null,
     val error: String? = null,
 )
+
+@Serializable
+data class ChatSteerRequest(
+    val session_id: String,
+    val text: String,
+)
+
+@Serializable
+data class ChatSteerResponse(
+    val ok: Boolean? = null,
+    val error: String? = null,
+)
+
+@Serializable
+data class BranchSessionRequest(
+    val session_id: String,
+    val message_index: Int? = null,
+)
+
+@Serializable
+data class BranchSessionResponse(
+    val session_id: String? = null,
+    val error: String? = null,
+)
+
+@Serializable
+data class TTSRequest(
+    val text: String,
+    val voice: String? = null,
+)
+
+@Serializable
+data class TTSResponse(
+    val audio_url: String? = null,
+    val error: String? = null,
+)

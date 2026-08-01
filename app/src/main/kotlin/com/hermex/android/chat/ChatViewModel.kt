@@ -509,9 +509,15 @@ class ChatViewModel(
         if (text.isEmpty() || stateAtTap.isSending || stateAtTap.isStreaming) return
 
         // Handle slash commands before sending
-        val command = CommandRegistry.matchCommand(text)
-        if (command != null) {
-            executeCommand(command)
+        val matchResult = CommandRegistry.matchCommand(text)
+        if (matchResult != null) {
+            val (cmd, argument) = matchResult
+            if (cmd.action != null) {
+                executeCommand(cmd.action, argument)
+            } else if (argument.isNotBlank()) {
+                // Commands without a specific action but with an argument send it as a message
+                _uiState.update { it.copy(composerText = argument) }
+            }
             return
         }
 
@@ -1241,7 +1247,7 @@ class ChatViewModel(
     )
 
     /** Executes a slash command action -- either sends a prompt or triggers UI state. */
-    private fun executeCommand(command: CommandAction) {
+    private fun executeCommand(command: CommandAction, argument: String = "") {
         when (command) {
             is CommandAction.Continue -> {
                 _uiState.update { it.copy(composerText = command.prompt) }
@@ -1251,11 +1257,157 @@ class ChatViewModel(
                 _uiState.update { it.copy(composerText = command.prompt) }
                 sendMessage()
             }
+            is CommandAction.Stop -> cancelStream()
+            is CommandAction.Interrupt -> cancelStream()
+            is CommandAction.Retry -> retryLastMessage()
             is CommandAction.Edit -> {
-                _uiState.update { it.copy(composerText = "", errorMessage = "Edit mode coming soon. Delete and re-send the message for now.") }
+                // Find last user message and trigger edit
+                val lastUserIdx = _uiState.value.messages.indexOfLast { it.role == "user" }
+                if (lastUserIdx >= 0) editMessage(lastUserIdx)
+            }
+            is CommandAction.Fork, is CommandAction.Branch -> forkFromMessage()
+            is CommandAction.New -> {
+                _uiState.update { it.copy(errorMessage = "Use the + button to start a new session.") }
+            }
+            is CommandAction.Clear -> {
+                _uiState.update { it.copy(messages = emptyList(), streamingText = "") }
             }
             is CommandAction.Search -> {
-                _uiState.update { it.copy(composerText = "", errorMessage = "Use the search icon in sessions list to search.") }
+                _uiState.update { it.copy(errorMessage = "Use the search icon in sessions list to search.") }
+            }
+            is CommandAction.Compress, is CommandAction.Compact -> {
+                _uiState.update { it.copy(composerText = "Please compress the conversation context.") }
+                sendMessage()
+            }
+            is CommandAction.Status -> {
+                val msgCount = _uiState.value.messages.size
+                val streaming = _uiState.value.isStreaming
+                _uiState.update { it.copy(errorMessage = "Messages: $msgCount | Streaming: $streaming | Session: $sessionId") }
+            }
+            is CommandAction.Model -> {
+                _uiState.update { it.copy(errorMessage = "Use the model chip in the composer to switch models.") }
+            }
+            is CommandAction.Workspace -> {
+                _uiState.update { it.copy(errorMessage = "Use the workspace chip in the composer to switch workspace.") }
+            }
+            is CommandAction.Reasoning -> {
+                _uiState.update { it.copy(expandThinkingByDefault = !it.expandThinkingByDefault) }
+            }
+            is CommandAction.Skills -> {
+                _uiState.update { it.copy(errorMessage = "Browse skills from the navigation drawer.") }
+            }
+            is CommandAction.Goal -> {
+                if (argument.isNotBlank()) {
+                    _uiState.update { it.copy(composerText = "Goal: $argument") }
+                    sendMessage()
+                }
+            }
+            is CommandAction.Title -> {
+                if (argument.isNotBlank()) {
+                    // Rename the session
+                    viewModelScope.launch {
+                        try {
+                            val api = authRepository.apiForActiveServer() ?: return@launch
+                            safeApiCall { api.renameSession(SessionRenameRequest(session_id = sessionId, title = argument)) }
+                        } catch (_: ApiError) {}
+                    }
+                }
+            }
+            is CommandAction.Personality -> {
+                if (argument.isNotBlank()) {
+                    _uiState.update { it.copy(composerText = "Please adopt this personality: $argument") }
+                    sendMessage()
+                }
+            }
+            is CommandAction.Queue -> {
+                if (argument.isNotBlank()) {
+                    _uiState.update { it.copy(composerText = argument) }
+                    sendMessage()
+                }
+            }
+            is CommandAction.Btw -> {
+                if (argument.isNotBlank()) {
+                    _uiState.update { it.copy(composerText = "By the way: $argument") }
+                    sendMessage()
+                }
+            }
+            is CommandAction.Background -> {
+                _uiState.update { it.copy(errorMessage = "The agent will continue running in the background.") }
+            }
+            is CommandAction.Undo -> {
+                // Find last user message and remove it
+                val msgs = _uiState.value.messages
+                val lastUserIdx = msgs.indexOfLast { it.role == "user" }
+                if (lastUserIdx >= 0) {
+                    viewModelScope.launch {
+                        try {
+                            val api = authRepository.apiForActiveServer() ?: return@launch
+                            if (activeStreamId != null) cancelStream()
+                            awaitPendingCancel()
+                            safeApiCall { api.truncateSession(TruncateSessionRequest(session_id = sessionId, keep_count = lastUserIdx)) }
+                            _uiState.update { it.copy(messages = it.messages.take(lastUserIdx)) }
+                        } catch (e: ApiError) {
+                            _uiState.update { it.copy(errorMessage = e.message ?: "Could not undo.") }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /** Send a steer message to redirect an in-flight response without cancelling it.
+     *  POST /api/chat/steer with { session_id, text }. */
+    fun steer(text: String) {
+        if (text.isBlank()) return
+        if (activeStreamId == null) {
+            _uiState.update { it.copy(errorMessage = "No active stream to steer.") }
+            return
+        }
+        viewModelScope.launch {
+            _uiState.update { it.copy(isSteering = true) }
+            try {
+                val api = authRepository.apiForActiveServer() ?: throw ApiError.Network(Exception("Not signed in"))
+                val response = safeApiCall {
+                    api.chatSteer(com.hermex.android.core.network.dto.ChatSteerRequest(
+                        session_id = sessionId,
+                        text = text,
+                    ))
+                }
+                if (response.error != null) {
+                    _uiState.update { it.copy(errorMessage = response.error) }
+                }
+            } catch (e: ApiError) {
+                _uiState.update { it.copy(errorMessage = e.message ?: "Could not steer the response.") }
+            } finally {
+                _uiState.update { it.copy(isSteering = false) }
+            }
+        }
+    }
+
+    /** Fork the current conversation from the last message, creating a new session.
+     *  POST /api/chat/branch with { session_id }. */
+    fun forkFromMessage() {
+        if (_uiState.value.isForkingMessage) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(isForkingMessage = true) }
+            try {
+                val api = authRepository.apiForActiveServer() ?: throw ApiError.Network(Exception("Not signed in"))
+                if (activeStreamId != null) cancelStream()
+                awaitPendingCancel()
+                val response = safeApiCall {
+                    api.branchSession(hermex.android.core.network.dto.BranchSessionRequest(
+                        session_id = sessionId,
+                    ))
+                }
+                if (response.error != null) {
+                    _uiState.update { it.copy(errorMessage = response.error) }
+                } else if (response.session_id != null) {
+                    _uiState.update { it.copy(errorMessage = "Forked to new session: ${response.session_id}") }
+                }
+            } catch (e: ApiError) {
+                _uiState.update { it.copy(errorMessage = e.message ?: "Could not fork session.") }
+            } finally {
+                _uiState.update { it.copy(isForkingMessage = false) }
             }
         }
     }

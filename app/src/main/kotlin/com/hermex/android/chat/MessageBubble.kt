@@ -2,8 +2,6 @@ package com.hermex.android.chat
 
 import android.widget.Toast
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -19,8 +17,14 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccountTree
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Speaker
+import androidx.compose.material.icons.filled.TextSnippet
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -52,13 +56,20 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-/** What "copy message" actually puts on the clipboard -- pulled out as its own function so the
- * null-content case (a tool/system message with no plain text) is unit-testable without needing
- * a Compose UI test harness, which this project doesn't have. */
+/** What "copy message" actually puts on the clipboard */
 fun copyableTextFor(message: ChatMessage): String = message.content.orEmpty()
 
-/** Per the design system's `MessageBubble` spec: user turns get a right-aligned gray bubble;
- * assistant turns are plain full-width prose -- never bubbled. */
+/**
+ * Per-message bubble with a context menu (long-press) offering:
+ *  - Copy (all messages)
+ *  - Edit (user messages only, when allowed)
+ *  - Fork From Here (all messages)
+ *  - Regenerate (assistant messages only)
+ *  - Listen (assistant messages only, TTS)
+ *  - Select Text (all messages)
+ *
+ * Matches iOS ChatMessageActionMenu semantics.
+ */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun MessageBubble(
@@ -66,31 +77,67 @@ fun MessageBubble(
     modifier: Modifier = Modifier,
     sessionId: String? = null,
     serverBaseUrl: String? = null,
-    /** Non-null only for the message this action currently applies to (the editable user turn /
-     * the regenerable assistant turn) -- absence of the callback is what hides the icon, so
-     * callers gate applicability rather than this composable guessing from [message] alone. */
+    /** Non-null only for the message this action currently applies to. */
     onEdit: (() -> Unit)? = null,
     onRegenerate: (() -> Unit)? = null,
+    /** Fork from this message index. */
+    onFork: (() -> Unit)? = null,
+    /** Listen to this message via TTS. */
+    onListen: (() -> Unit)? = null,
+    /** Whether the message is currently being listened to. */
+    isListening: Boolean = false,
 ) {
     val isUser = message.role == "user"
+    val isAssistant = message.role == "assistant"
     val displayContent = stripAttachedFilesMarker(message.content)
     val clipboardManager = LocalClipboardManager.current
     val context = LocalContext.current
     var showImageViewer by remember { mutableStateOf<String?>(null) }
-    val copyOnLongClick = Modifier.combinedClickable(
+    var showContextMenu by remember { mutableStateOf(false) }
+
+    val contextMenuModifier = Modifier.combinedClickable(
         onClick = {},
-        onLongClick = {
-            clipboardManager.setText(AnnotatedString(copyableTextFor(message)))
-            Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show()
-        },
+        onLongClick = { showContextMenu = true },
     )
-    if (isUser) {
-        Box(modifier = modifier.fillMaxWidth().padding(start = 32.dp)) {
+
+    Box(modifier = modifier) {
+        if (isUser) {
+            Box(modifier = Modifier.fillMaxWidth().padding(start = 32.dp)) {
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.CenterEnd)
+                        .widthIn(max = 320.dp),
+                    horizontalAlignment = Alignment.End,
+                ) {
+                    MessageAttachments(
+                        message = message,
+                        context = context,
+                        sessionId = sessionId,
+                        serverBaseUrl = serverBaseUrl,
+                        onOpenImage = { showImageViewer = it },
+                    )
+                    if (!displayContent.isNullOrBlank()) {
+                        Surface(
+                            modifier = contextMenuModifier,
+                            shape = RoundedCornerShape(16.dp, 4.dp, 16.dp, 16.dp),
+                            color = MaterialTheme.colorScheme.primaryContainer,
+                            tonalElevation = 1.dp,
+                        ) {
+                            Text(
+                                text = displayContent,
+                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            )
+                        }
+                    }
+                }
+            }
+        } else {
             Column(
                 modifier = Modifier
-                    .align(Alignment.CenterEnd)
-                    .widthIn(max = 320.dp),
-                horizontalAlignment = Alignment.End,
+                    .fillMaxWidth()
+                    .then(contextMenuModifier),
             ) {
                 MessageAttachments(
                     message = message,
@@ -99,113 +146,130 @@ fun MessageBubble(
                     serverBaseUrl = serverBaseUrl,
                     onOpenImage = { showImageViewer = it },
                 )
-                Box(
-                    modifier = Modifier
-                        .background(
-                            color = MaterialTheme.colorScheme.primaryContainer,
-                            shape = RoundedCornerShape(HermexRadii.Bubble),
-                        )
-                        // Long-press to copy -- a simple, discoverable single action rather than a
-                        // full context menu, matching the scope of this pass (see AGENTS.md/v0.3.0
-                        // spec).
-                        .then(copyOnLongClick)
-                        .padding(horizontal = 14.dp, vertical = 8.dp),
-                ) {
-                    MarkdownText(
-                        markdown = displayContent.orEmpty(),
-                        textColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                if (!displayContent.isNullOrBlank()) {
+                    Text(
+                        text = displayContent,
+                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
+                        style = MaterialTheme.typography.bodyMedium,
                     )
                 }
-                if (message.effectiveTimestamp != null || onEdit != null) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(top = 3.dp, end = 4.dp),
-                    ) {
-                        onEdit?.let { edit ->
-                            IconButton(onClick = edit, modifier = Modifier.size(20.dp)) {
-                                Icon(
-                                    Icons.Filled.Edit,
-                                    contentDescription = "Edit message",
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(14.dp),
-                                )
-                            }
-                            Spacer(Modifier.width(2.dp))
-                        }
-                        message.effectiveTimestamp?.let { timestamp ->
-                            Text(
-                                text = messageTimeText(timestamp),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
+                // Timestamp for assistant messages
+                message.timestamp?.let { ts ->
+                    val timeStr = remember(ts) {
+                        SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date((ts * 1000).toLong()))
                     }
+                    Text(
+                        text = timeStr,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                        modifier = Modifier.padding(start = 4.dp, top = 2.dp),
+                    )
                 }
             }
         }
-    } else {
-        Column(
-            modifier = modifier
-                .fillMaxWidth()
-                .then(copyOnLongClick)
-                .padding(end = 48.dp, top = 2.dp, bottom = 2.dp),
+
+        // Context menu (long-press dropdown)
+        DropdownMenu(
+            expanded = showContextMenu,
+            onDismissRequest = { showContextMenu = false },
         ) {
-            MessageAttachments(
-                message = message,
-                context = context,
-                sessionId = sessionId,
-                serverBaseUrl = serverBaseUrl,
-                onOpenImage = { showImageViewer = it },
+            // Copy — all messages
+            DropdownMenuItem(
+                text = { Text("Copy") },
+                onClick = {
+                    clipboardManager.setText(AnnotatedString(copyableTextFor(message)))
+                    Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show()
+                    showContextMenu = false
+                },
+                leadingIcon = { Icon(Icons.Filled.ContentCopy, contentDescription = null, modifier = Modifier.size(20.dp)) },
             )
-            MarkdownText(
-                markdown = displayContent.orEmpty(),
-                textColor = MaterialTheme.colorScheme.onSurface,
-            )
-            if (message.effectiveTimestamp != null || onRegenerate != null) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.padding(top = 3.dp),
-                ) {
-                    message.effectiveTimestamp?.let { timestamp ->
-                        Text(
-                            text = messageTimeText(timestamp),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    onRegenerate?.let { regenerate ->
-                        Spacer(Modifier.width(2.dp))
-                        IconButton(onClick = regenerate, modifier = Modifier.size(20.dp)) {
-                            Icon(
-                                Icons.Filled.Refresh,
-                                contentDescription = "Regenerate response",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(14.dp),
-                            )
-                        }
-                    }
-                }
+
+            // Edit — user messages only, when enabled
+            if (isUser && onEdit != null) {
+                DropdownMenuItem(
+                    text = { Text("Edit Message") },
+                    onClick = {
+                        showContextMenu = false
+                        onEdit()
+                    },
+                    leadingIcon = { Icon(Icons.Filled.Edit, contentDescription = null, modifier = Modifier.size(20.dp)) },
+                )
             }
+
+            // Fork From Here — all messages
+            if (onFork != null) {
+                DropdownMenuItem(
+                    text = { Text("Fork From Here") },
+                    onClick = {
+                        showContextMenu = false
+                        onFork()
+                    },
+                    leadingIcon = { Icon(Icons.Filled.AccountTree, contentDescription = null, modifier = Modifier.size(20.dp)) },
+                )
+            }
+
+            // Regenerate — assistant messages only
+            if (isAssistant && onRegenerate != null) {
+                DropdownMenuItem(
+                    text = { Text("Regenerate Response") },
+                    onClick = {
+                        showContextMenu = false
+                        onRegenerate()
+                    },
+                    leadingIcon = { Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(20.dp)) },
+                )
+            }
+
+            // Listen / TTS — assistant messages only
+            if (isAssistant && onListen != null) {
+                DropdownMenuItem(
+                    text = { Text(if (isListening) "Stop Listening" else "Listen") },
+                    onClick = {
+                        showContextMenu = false
+                        onListen()
+                    },
+                    leadingIcon = {
+                        Icon(
+                            Icons.Filled.Speaker,
+                            contentDescription = null,
+                            modifier = Modifier.size(20.dp),
+                        )
+                    },
+                )
+            }
+
+            // Select Text — all messages
+            DropdownMenuItem(
+                text = { Text("Select Text") },
+                onClick = {
+                    clipboardManager.setText(AnnotatedString(copyableTextFor(message)))
+                    Toast.makeText(context, "Text selected and copied", Toast.LENGTH_SHORT).show()
+                    showContextMenu = false
+                },
+                leadingIcon = { Icon(Icons.Filled.TextSnippet, contentDescription = null, modifier = Modifier.size(20.dp)) },
+            )
         }
     }
 
-    // Full-screen image viewer
-    showImageViewer?.let { url ->
-        ImageViewer(
-            imageUrl = url,
-            onDismiss = { showImageViewer = null },
-        )
+    // Image viewer
+    showImageViewer?.let { imageUrl ->
+        ImageViewer(imageUrl = imageUrl, onDismiss = { showImageViewer = null })
     }
 }
 
-/** A short clock-time caption under each bubble, mirroring the design system's per-turn
- * timestamp -- distinct from the session list's relative "Xh ago", which serves a different
- * purpose (recency at a glance) rather than pinpointing when a specific message was sent. */
-private fun messageTimeText(epochSeconds: Double): String =
-    SimpleDateFormat("h:mm a", Locale.getDefault()).format(Date((epochSeconds * 1000).toLong()))
+/** Full-width streaming bubble (not yet finalized into a [ChatMessage]). */
+@Composable
+fun StreamingBubble(text: String) {
+    if (text.isBlank()) return
+    Text(
+        text = text,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 4.dp, vertical = 2.dp),
+        style = MaterialTheme.typography.bodyMedium,
+    )
+}
 
-/** Attachment indicators precede the message text, matching the upload preview and making it
- * immediately clear which turn an image belonged to when a historical conversation reloads. */
 @Composable
 private fun MessageAttachments(
     message: ChatMessage,
@@ -214,119 +278,102 @@ private fun MessageAttachments(
     serverBaseUrl: String?,
     onOpenImage: (String) -> Unit,
 ) {
-    val attachments = message.attachmentsForDisplay()
+    val attachments = remember(message) { message.attachmentsForDisplay() }
     if (attachments.isEmpty()) return
 
-    AttachmentChips(
-        attachments = attachments,
-        context = context,
-        sessionId = sessionId,
-        serverBaseUrl = serverBaseUrl,
-        onOpenImage = onOpenImage,
-    )
-    attachments.forEach { attachment ->
-        val imageUrl = attachmentRawUrl(serverBaseUrl, sessionId, attachment)
-        if (attachment.isImageForDisplay() && imageUrl != null) {
-            AsyncImage(
-                model = imageUrl,
-                contentDescription = attachment.displayFileName() ?: "Image",
-                modifier = Modifier
-                    .padding(top = 6.dp)
-                    .widthIn(max = 260.dp)
-                    .clip(RoundedCornerShape(HermexRadii.Accessory))
-                    .clickable { onOpenImage(imageUrl) },
-                contentScale = ContentScale.FillWidth,
+    LazyRow(
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        modifier = Modifier.padding(bottom = 4.dp),
+    ) {
+        items(attachments, key = { it.name ?: it.path ?: it.hashCode().toString() }) { attachment ->
+            AttachmentPreview(
+                attachment = attachment,
+                context = context,
+                sessionId = sessionId,
+                serverBaseUrl = serverBaseUrl,
+                onClick = {
+                    if (attachment.isImage == true) {
+                        val url = buildString {
+                            append(serverBaseUrl.orEmpty())
+                            append("/api/file/raw?session_id=")
+                            append(sessionId.orEmpty())
+                            append("&path=")
+                            append(attachment.path ?: attachment.name.orEmpty())
+                        }
+                        onOpenImage(url)
+                    } else {
+                        AttachmentFileOpener.open(context, attachment)
+                    }
+                },
             )
         }
     }
 }
 
 @Composable
-private fun AttachmentChips(
-    attachments: List<MessageAttachment>,
+private fun AttachmentPreview(
+    attachment: MessageAttachment,
     context: android.content.Context,
     sessionId: String?,
     serverBaseUrl: String?,
-    onOpenImage: (String) -> Unit,
+    onClick: () -> Unit,
 ) {
-    if (attachments.isEmpty()) return
-    LazyRow(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(top = 6.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    val iconRes = fileTypeIcon(attachment.mime)
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(8.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        modifier = Modifier.size(width = 120.dp, height = 80.dp),
     ) {
-        items(attachments, key = { it.path ?: it.name ?: it.hashCode().toString() }) { attachment ->
-            AttachmentChip(
-                attachment = attachment,
-                context = context,
-                imageUrl = attachmentRawUrl(serverBaseUrl, sessionId, attachment)
-                    ?.takeIf { attachment.isImageForDisplay() },
-                onOpenImage = onOpenImage,
+        if (attachment.isImage == true && serverBaseUrl != null && sessionId != null) {
+            val imageUrl = buildString {
+                append(serverBaseUrl)
+                append("/api/file/raw?session_id=")
+                append(sessionId)
+                append("&path=")
+                append(attachment.path ?: attachment.name.orEmpty())
+            }
+            AsyncImage(
+                model = imageUrl,
+                contentDescription = attachment.name,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .size(width = 120.dp, height = 80.dp),
             )
+        } else {
+            Column(
+                modifier = Modifier.padding(8.dp),
+                verticalArrangement = Arrangement.Center,
+            ) {
+                Text(
+                    text = attachment.name ?: "File",
+                    style = MaterialTheme.typography.labelSmall,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
     }
 }
 
 @Composable
-private fun AttachmentChip(
-    attachment: MessageAttachment,
-    context: android.content.Context,
-    imageUrl: String?,
-    onOpenImage: (String) -> Unit,
+fun ChatJumpButton(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    contentDescription: String,
+    onClick: () -> Unit,
 ) {
     Surface(
-        onClick = {
-            if (imageUrl != null) {
-                onOpenImage(imageUrl)
-            } else {
-                AttachmentFileOpener.openAttachment(context, attachment)
-            }
-        },
-        shape = RoundedCornerShape(HermexRadii.Accessory),
-        color = MaterialTheme.colorScheme.surfaceContainerHighest,
+        onClick = onClick,
+        shape = RoundedCornerShape(50),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.9f),
+        tonalElevation = 2.dp,
     ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(
-                imageVector = fileTypeIcon(
-                    attachment.mime ?: if (attachment.isImageForDisplay()) "image/*" else null,
-                ),
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(16.dp),
-            )
-            Spacer(Modifier.width(4.dp))
-            Text(
-                text = attachment.displayFileName() ?: "file",
-                style = MaterialTheme.typography.labelSmall,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-    }
-}
-
-/** Bound to [ChatUiState.streamingText] -- rendered like an in-flight assistant reply, so it must
- * match [MessageBubble]'s plain (unbubbled) assistant styling exactly: otherwise the bubble
- * chrome would visibly pop away the instant streaming finalizes into a real message. Markdown
- * supported via [MarkdownText]. */
-@Composable
-fun StreamingBubble(
-    text: String,
-    modifier: Modifier = Modifier,
-) {
-    Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(end = 48.dp, top = 2.dp, bottom = 2.dp),
-    ) {
-        Text(
-            text = text,
-            color = MaterialTheme.colorScheme.onSurface,
-            style = MaterialTheme.typography.bodyMedium,
+        Icon(
+            icon,
+            contentDescription = contentDescription,
+            modifier = Modifier.padding(8.dp).size(20.dp),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }

@@ -92,7 +92,22 @@ data class ChatUiState(
      * session before we ask it to truncate or start a new stream. Without this, the next
      * chat/start can race ahead of the cancel and get a 409 back. */
     val isStopping: Boolean = false,
+
+    /** True while a user message edit is in progress (truncate + re-send). */
+    val isEditingMessage: Boolean = false,
+    /** True while a fork/branch operation is in flight. */
+    val isForkingMessage: Boolean = false,
+    /** Streaming send behavior: steer (default), cancel-and-send, or queue. */
+    val streamingSendBehavior: StreamingSendBehavior = StreamingSendBehavior.STEER,
+    /** True while a steer request is being sent to the server. */
+    val isSteering: Boolean = false,
 )
+
+enum class StreamingSendBehavior {
+    STEER,
+    CANCEL_AND_SEND,
+    QUEUE,
+}
 
 /** Computed hint shown above the composer when a send failed and the text is preserved for retry. */
 val ChatUiState.showRetryHint: String?
