@@ -51,6 +51,10 @@ import kotlinx.coroutines.launch
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
 import okhttp3.RequestBody.Companion.toRequestBody
+import android.media.MediaPlayer
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.io.File
 
 private const val OFFLINE_CACHE_MESSAGE = "Unable to reach server -- showing cached conversation"
 
@@ -1229,7 +1233,73 @@ class ChatViewModel(
         return false
     }
 
+    /** TTS playback state */
+    private var ttsPlayer: MediaPlayer? = null
+    private var listeningMessageId: String? = null
+
+    /** Toggle TTS playback for a specific assistant message. */
+    fun toggleListen(messageIndex: Int) {
+        val message = _uiState.value.messages.getOrNull(messageIndex) ?: return
+        if (message.role != "assistant") return
+        val text = message.content ?: return
+
+        // If already listening to this message, stop
+        if (listeningMessageId == message.stableId) {
+            stopListening()
+            return
+        }
+
+        // Stop any current playback
+        stopListening()
+        listeningMessageId = message.stableId
+
+        viewModelScope.launch {
+            try {
+                val api = authRepository.apiForActiveServer() ?: throw ApiError.Network(Exception("Not signed in"))
+                // Call TTS endpoint - for now send as form body
+                val textPart = okhttp3.RequestBody.create(
+                    "text/plain".toMediaTypeOrNull(), text
+                )
+                val voicePart = okhttp3.RequestBody.create(
+                    "text/plain".toMediaTypeOrNull(), "default"
+                )
+                val responseBody = safeApiCall { api.tts(textPart, voicePart) }
+                
+                // Write response to temp file and play
+                val tempFile = File(cacheDir, "tts_${message.stableId}.mp3")
+                withContext(Dispatchers.IO) {
+                    tempFile.outputStream().use { out ->
+                        responseBody.byteStream().use { input ->
+                            input.copyTo(out)
+                        }
+                    }
+                }
+                
+                val mp = MediaPlayer().apply {
+                    setDataSource(tempFile.absolutePath)
+                    setOnCompletionListener {
+                        stopListening()
+                        tempFile.delete()
+                    }
+                    prepare()
+                    start()
+                }
+                ttsPlayer = mp
+            } catch (e: Exception) {
+                _uiState.update { it.copy(errorMessage = "TTS failed: ${e.message}") }
+                stopListening()
+            }
+        }
+    }
+
+    private fun stopListening() {
+        ttsPlayer?.release()
+        ttsPlayer = null
+        listeningMessageId = null
+    }
+
     override fun onCleared() {
+        stopListening()
         // App-retained ownership means this runs on logout/server switch/process teardown, not
         // merely when the user switches to another chat destination.
         streamJob?.cancel()
