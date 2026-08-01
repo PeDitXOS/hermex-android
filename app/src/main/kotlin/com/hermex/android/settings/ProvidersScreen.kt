@@ -15,6 +15,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 
 /**
+ * Provider status info — which AI providers are configured and healthy.
+ */
+data class ProviderStatus(
+    val name: String,
+    val isConfigured: Boolean,
+    val isHealthy: Boolean? = null, // null = unknown
+    val modelCount: Int = 0,
+)
+
+/**
  * Providers screen — iOS ProvidersView equivalent.
  * Shows configured AI providers and their status.
  */
