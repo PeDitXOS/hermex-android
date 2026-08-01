@@ -56,7 +56,7 @@ fun GitBranchPickerScreen(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Icon(
-                            Icons.Filled.SourceBranch,
+                            Icons.Filled.AccountTree,
                             contentDescription = null,
                             modifier = Modifier.size(20.dp),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
