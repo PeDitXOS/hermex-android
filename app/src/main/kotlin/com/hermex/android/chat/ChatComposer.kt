@@ -6,6 +6,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -80,6 +81,7 @@ import coil3.compose.SubcomposeAsyncImage
 import com.hermex.android.core.network.dto.fileTypeIcon
 import com.hermex.android.core.util.HermexLog
 import com.hermex.android.ui.theme.HermexRadii
+import java.io.File
 
 /** [ChatComposer]'s callbacks, grouped so adding a future action (slash commands) doesn't widen
  * [ChatComposer]'s own parameter list. */
@@ -92,6 +94,7 @@ data class ChatComposerActions(
     val onSelectModel: (ModelCatalogOption) -> Unit,
     val onAttachFile: (Uri) -> Unit,
     val onRemoveAttachment: (String) -> Unit,
+    val onSendVoiceNote: (File, String) -> Unit,
 )
 
 /** The profile dropdown's own list/selection data -- separate from [ChatComposerState] because
@@ -176,6 +179,8 @@ fun ChatComposer(
     var commandQuery by remember { mutableStateOf("") }
     var isRecording by remember { mutableStateOf(false) }
     val voiceHandler = remember { VoiceInputHandler(context) }
+    val voiceRecorder = remember { VoiceNoteRecorder(context.cacheDir) }
+    var voiceRecordingElapsedMs by remember { mutableStateOf(0L) }
     val snackbarHostState = remember { SnackbarHostState() }
     val coroutineScope = rememberCoroutineScope()
     val recordAudioPermission = android.Manifest.permission.RECORD_AUDIO
@@ -183,31 +188,13 @@ fun ChatComposer(
         contract = ActivityResultContracts.RequestPermission(),
     ) { granted ->
         if (granted) {
-            voiceHandler.startListening(
-                onResult = { text ->
-                    actions.onTextChanged(composerState.text + text)
-                    isRecording = false
-                },
-                onError = {
-                    isRecording = false
-                },
-            )
+            voiceRecorder.begin(coroutineScope)
             isRecording = true
         } else {
-            // Permission denied -- show education Snackbar
             coroutineScope.launch {
-                val result = snackbarHostState.showSnackbar(
-                    message = "Microphone permission is required for voice input. Please enable it in Settings.",
-                    actionLabel = "Settings",
-                    withDismissAction = true,
+                snackbarHostState.showSnackbar(
+                    "Microphone permission is required for voice input. Please enable it in Settings.",
                 )
-                if (result == SnackbarResult.ActionPerformed) {
-                    // Open app settings
-                    val intent = android.content.Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                        data = android.net.Uri.fromParts("package", context.packageName, null)
-                    }
-                    context.startActivity(intent)
-                }
             }
         }
     }
@@ -282,6 +269,37 @@ fun ChatComposer(
 
                 Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
+                        // Mic button — left of text field
+                        IconButton(
+                            onClick = {
+                                if (isRecording) {
+                                    voiceHandler.stopListening()
+                                    isRecording = false
+                                } else {
+                                    val permissionState = ContextCompat.checkSelfPermission(context, recordAudioPermission)
+                                    if (permissionState == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                                        voiceHandler.startListening(
+                                            onResult = { text ->
+                                                actions.onTextChanged(composerState.text + text)
+                                                isRecording = false
+                                            },
+                                            onError = {
+                                                isRecording = false
+                                            },
+                                        )
+                                        isRecording = true
+                                    } else {
+                                        permissionLauncher.launch(recordAudioPermission)
+                                    }
+                                }
+                            },
+                        ) {
+                            Icon(
+                                if (isRecording) Icons.Filled.Mic else Icons.Filled.KeyboardVoice,
+                                contentDescription = if (isRecording) "Stop recording" else "Voice input",
+                                tint = if (isRecording) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                         OutlinedTextField(
                             value = composerState.text,
                             onValueChange = { newValue ->
@@ -376,36 +394,6 @@ fun ChatComposer(
                             onOpenModelPicker = actions.onOpenModelPicker,
                             onSelectModel = actions.onSelectModel,
                         )
-                        IconButton(
-                            onClick = {
-                                if (isRecording) {
-                                    voiceHandler.stopListening()
-                                    isRecording = false
-                                } else {
-                                    val permissionState = ContextCompat.checkSelfPermission(context, recordAudioPermission)
-                                    if (permissionState == android.content.pm.PackageManager.PERMISSION_GRANTED) {
-                                        voiceHandler.startListening(
-                                            onResult = { text ->
-                                                actions.onTextChanged(composerState.text + text)
-                                                isRecording = false
-                                            },
-                                            onError = {
-                                                isRecording = false
-                                            },
-                                        )
-                                        isRecording = true
-                                    } else {
-                                        permissionLauncher.launch(recordAudioPermission)
-                                    }
-                                }
-                            },
-                        ) {
-                            Icon(
-                                if (isRecording) Icons.Filled.Mic else Icons.Filled.KeyboardVoice,
-                                contentDescription = if (isRecording) "Stop recording" else "Voice input",
-                                tint = if (isRecording) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
                     }
                 }
             }
