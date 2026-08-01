@@ -37,6 +37,7 @@ import com.hermex.android.core.util.TtftTracer
 import com.hermex.android.chat.ResponseCompletionNotifier
 import java.io.File
 import java.util.UUID
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -46,7 +47,7 @@ import com.hermex.android.core.network.dto.ApprovalRespondRequest
 import com.hermex.android.core.network.dto.ClarificationRespondRequest
 import com.hermex.android.core.network.dto.SessionYoloRequest
 import com.hermex.android.core.network.dto.TruncateSessionRequest
-import com.hermex.android.core.network.dto.SessionRenameRequest
+import com.hermex.android.core.network.dto.BranchSessionRequest
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
