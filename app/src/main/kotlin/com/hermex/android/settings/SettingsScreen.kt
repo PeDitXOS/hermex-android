@@ -63,6 +63,7 @@ import android.provider.Settings
 import coil3.compose.AsyncImage
 import com.hermex.android.BuildConfig
 import com.hermex.android.PRIVACY_POLICY_URL
+import com.hermex.android.GITHUB_REPO_URL
 import com.hermex.android.R
 import com.hermex.android.core.storage.AppIconVariant
 import com.hermex.android.core.storage.HeaderLogoColor
@@ -356,8 +357,18 @@ fun SettingsScreen(
                 Spacer(Modifier.height(24.dp))
                 SectionLabel("App")
                 Card {
-                    SettingsRow("Version", BuildConfig.VERSION_NAME)
-                    SettingsRow("Build", BuildConfig.VERSION_CODE.toString())
+                    SettingsRow("Version", "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
+                    SettingsRow(
+                        "GitHub",
+                        "Source code & releases",
+                        onClick = {
+                            runCatching {
+                                context.startActivity(
+                                    Intent(Intent.ACTION_VIEW, Uri.parse(GITHUB_REPO_URL)),
+                                )
+                            }
+                        },
+                    )
                     SettingsRow(
                         "Privacy Policy",
                         "View online",

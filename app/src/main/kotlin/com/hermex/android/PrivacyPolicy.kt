@@ -1,3 +1,4 @@
 package com.hermex.android
 
-const val PRIVACY_POLICY_URL = "https://computerbyte.github.io/hermex-android/privacy/"
+const val PRIVACY_POLICY_URL = "https://PeDitXOS.github.io/hermex-android/privacy/"
+const val GITHUB_REPO_URL = "https://github.com/PeDitXOS/hermex-android"

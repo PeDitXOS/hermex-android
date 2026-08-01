@@ -233,6 +233,7 @@ fun ChatScreen(
                     onSelectModel = viewModel::selectComposerModel,
                     onAttachFile = viewModel::uploadAttachment,
                     onRemoveAttachment = viewModel::removePendingAttachment,
+                    onSendVoiceNote = viewModel::sendVoiceNote,
                 ),
             )
         },

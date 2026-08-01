@@ -1325,6 +1325,25 @@ class ChatViewModel(
         listeningMessageId = null
     }
 
+    /** Upload a recorded voice note as an attachment and send it. */
+    fun sendVoiceNote(file: java.io.File, filename: String) {
+        viewModelScope.launch {
+            try {
+                val api = authRepository.apiForActiveServer() ?: throw ApiError.Network(Exception("Not signed in"))
+                val sessionIdPart = "text/plain".toRequestBody()
+                val filePart = MultipartBody.Part.createFormData(
+                    "file", filename,
+                    file.readBytes().toRequestBody("audio/m4a".toMediaTypeOrNull()),
+                )
+                val uploadResponse = safeApiCall { api.uploadAttachment(sessionIdPart, filePart) }
+                addUploadedAttachment(uploadResponse)
+                sendMessage()
+            } catch (e: Exception) {
+                _uiState.update { it.copy(errorMessage = "Voice note upload failed: ${e.message}") }
+            }
+        }
+    }
+
     override fun onCleared() {
         stopListening()
         // App-retained ownership means this runs on logout/server switch/process teardown, not
