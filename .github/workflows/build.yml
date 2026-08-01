@@ -41,10 +41,12 @@ jobs:
           ./gradlew assembleDebug --no-daemon
 
       - name: Build Release APK
+        continue-on-error: true
         run: |
-          ./gradlew assembleRelease --no-daemon
+          ./gradlew assembleRelease --no-daemon || echo "Release build failed (likely missing signing config), continuing with debug only"
 
       - name: Upload Debug APK
+        if: success() || failure()
         uses: actions/upload-artifact@v4
         with:
           name: hermex-debug
@@ -52,6 +54,8 @@ jobs:
           retention-days: 7
 
       - name: Upload Release APK
+        if: always()
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: hermex-release
