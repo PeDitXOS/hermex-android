@@ -49,3 +49,15 @@ data class KanbanMutationResponse(
     val card_id: String? = null,
     val error: String? = null,
 )
+
+@Serializable
+data class KanbanBoardResponse(
+    val board: KanbanBoard? = null,
+    val error: String? = null,
+)
+
+@Serializable
+data class KanbanCardDeleteRequest(
+    val session_id: String,
+    val card_id: String,
+)

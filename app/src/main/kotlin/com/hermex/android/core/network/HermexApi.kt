@@ -67,6 +67,11 @@ import com.hermex.android.core.network.dto.SkillsResponse
 import com.hermex.android.core.network.dto.UpdateSessionRequest
 import com.hermex.android.core.network.dto.UploadResponse
 import com.hermex.android.core.network.dto.GenericResponse
+import com.hermex.android.core.network.dto.KanbanBoardResponse
+import com.hermex.android.core.network.dto.KanbanCardDeleteRequest
+import com.hermex.android.core.network.dto.KanbanCardRequest
+import com.hermex.android.core.network.dto.KanbanCardUpdateRequest
+import com.hermex.android.core.network.dto.KanbanMutationResponse
 import com.hermex.android.core.network.dto.SessionRenameRequest
 import com.hermex.android.core.network.dto.SessionIdRequest
 import com.hermex.android.core.network.dto.SessionProjectRequest
@@ -342,4 +347,17 @@ interface HermexApi {
 
     @POST("/api/git/discard")
     suspend fun gitDiscard(@Body body: GitDiscardRequest): GenericResponse
+
+    // Kanban endpoints
+    @GET("/api/kanban/board")
+    suspend fun kanbanBoard(@Query("session_id") sessionId: String): KanbanBoardResponse
+
+    @POST("/api/kanban/card")
+    suspend fun kanbanCreateCard(@Body body: KanbanCardRequest): KanbanMutationResponse
+
+    @POST("/api/kanban/card/update")
+    suspend fun kanbanUpdateCard(@Body body: KanbanCardUpdateRequest): KanbanMutationResponse
+
+    @POST("/api/kanban/card/delete")
+    suspend fun kanbanDeleteCard(@Body body: KanbanCardDeleteRequest): KanbanMutationResponse
 }
