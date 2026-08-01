@@ -53,6 +53,25 @@ class SettingsViewModel(
             _uiState.update { it.copy(expandToolCallsByDefault = chatPreferencesStore.loadExpandToolCallsByDefault()) }
             _uiState.update { it.copy(notificationsEnabled = chatPreferencesStore.loadNotificationsEnabled()) }
             _uiState.update { it.copy(showSubagentSessions = chatPreferencesStore.loadShowSubagentSessions()) }
+            // Session Display
+            _uiState.update { it.copy(showSessionMessageCount = chatPreferencesStore.loadShowSessionMessageCount()) }
+            _uiState.update { it.copy(showSessionWorkspace = chatPreferencesStore.loadShowSessionWorkspace()) }
+            _uiState.update { it.copy(showCronSessions = chatPreferencesStore.loadShowCronSessions()) }
+            _uiState.update { it.copy(showCliSessions = chatPreferencesStore.loadShowCliSessions()) }
+            _uiState.update { it.copy(showClaudeCodeSessions = chatPreferencesStore.loadShowClaudeCodeSessions()) }
+            // Chat Display
+            _uiState.update { it.copy(showsThinkingAndToolCards = chatPreferencesStore.loadShowsThinkingAndToolCards()) }
+            _uiState.update { it.copy(thinkingCardsStartExpanded = chatPreferencesStore.loadThinkingCardsStartExpanded()) }
+            _uiState.update { it.copy(toolCardsStartExpanded = chatPreferencesStore.loadToolCardsStartExpanded()) }
+            _uiState.update { it.copy(isStreamedTextAnimationEnabled = chatPreferencesStore.loadIsStreamedTextAnimationEnabled()) }
+            _uiState.update { it.copy(showsAssistantTurnTimestamps = chatPreferencesStore.loadShowsAssistantTurnTimestamps()) }
+            _uiState.update { it.copy(wrapsCodeBlockLines = chatPreferencesStore.loadWrapsCodeBlockLines()) }
+            _uiState.update { it.copy(rtlChatLayoutEnabled = chatPreferencesStore.loadRtlChatLayoutEnabled()) }
+            _uiState.update { it.copy(hidesAttachmentPaths = chatPreferencesStore.loadHidesAttachmentPaths()) }
+            // Interaction
+            _uiState.update { it.copy(isHapticsEnabled = chatPreferencesStore.loadIsHapticsEnabled()) }
+            _uiState.update { it.copy(streamingSendBehavior = chatPreferencesStore.loadStreamingSendBehavior()) }
+            _uiState.update { it.copy(sttProvider = chatPreferencesStore.loadSttProvider()) }
             _uiState.update { it.copy(headerLogoColor = appearancePreferencesStore.loadHeaderLogoColor()) }
             _uiState.update { it.copy(appIconVariant = appearancePreferencesStore.loadAppIconVariant()) }
             val initials = appearancePreferencesStore.loadUserInitials()
@@ -125,22 +144,22 @@ class SettingsViewModel(
         onNotificationsChanged?.invoke(value)
     }
 
-    fun toggleSessionMessageCount() { _uiState.update { it.copy(showSessionMessageCount = !it.showSessionMessageCount) } }
-    fun toggleSessionWorkspace() { _uiState.update { it.copy(showSessionWorkspace = !it.showSessionWorkspace) } }
-    fun toggleCronSessions() { _uiState.update { it.copy(showCronSessions = !it.showCronSessions) } }
-    fun toggleCliSessions() { _uiState.update { it.copy(showCliSessions = !it.showCliSessions) } }
-    fun toggleClaudeCodeSessions() { _uiState.update { it.copy(showClaudeCodeSessions = !it.showClaudeCodeSessions) } }
-    fun toggleThinkingAndToolCards() { _uiState.update { it.copy(showsThinkingAndToolCards = !it.showsThinkingAndToolCards) } }
-    fun toggleThinkingExpanded() { _uiState.update { it.copy(thinkingCardsStartExpanded = !it.thinkingCardsStartExpanded) } }
-    fun toggleToolExpanded() { _uiState.update { it.copy(toolCardsStartExpanded = !it.toolCardsStartExpanded) } }
-    fun toggleStreamedTextAnimation() { _uiState.update { it.copy(isStreamedTextAnimationEnabled = !it.isStreamedTextAnimationEnabled) } }
-    fun toggleResponseTimestamps() { _uiState.update { it.copy(showsAssistantTurnTimestamps = !it.showsAssistantTurnTimestamps) } }
-    fun toggleWrapCodeBlocks() { _uiState.update { it.copy(wrapsCodeBlockLines = !it.wrapsCodeBlockLines) } }
-    fun toggleRtlChat() { _uiState.update { it.copy(rtlChatLayoutEnabled = !it.rtlChatLayoutEnabled) } }
-    fun toggleHideAttachmentPaths() { _uiState.update { it.copy(hidesAttachmentPaths = !it.hidesAttachmentPaths) } }
+    fun toggleSessionMessageCount() { _uiState.update { it.copy(showSessionMessageCount = !it.showSessionMessageCount) }; viewModelScope.launch { chatPreferencesStore.setShowSessionMessageCount(!uiState.value.showSessionMessageCount) } }
+    fun toggleSessionWorkspace() { _uiState.update { it.copy(showSessionWorkspace = !it.showSessionWorkspace) }; viewModelScope.launch { chatPreferencesStore.setShowSessionWorkspace(!uiState.value.showSessionWorkspace) } }
+    fun toggleCronSessions() { _uiState.update { it.copy(showCronSessions = !it.showCronSessions) }; viewModelScope.launch { chatPreferencesStore.setShowCronSessions(!uiState.value.showCronSessions) } }
+    fun toggleCliSessions() { _uiState.update { it.copy(showCliSessions = !it.showCliSessions) }; viewModelScope.launch { chatPreferencesStore.setShowCliSessions(!uiState.value.showCliSessions) } }
+    fun toggleClaudeCodeSessions() { _uiState.update { it.copy(showClaudeCodeSessions = !it.showClaudeCodeSessions) }; viewModelScope.launch { chatPreferencesStore.setShowClaudeCodeSessions(!uiState.value.showClaudeCodeSessions) } }
+    fun toggleThinkingAndToolCards() { _uiState.update { it.copy(showsThinkingAndToolCards = !it.showsThinkingAndToolCards) }; viewModelScope.launch { chatPreferencesStore.setShowsThinkingAndToolCards(!uiState.value.showsThinkingAndToolCards) } }
+    fun toggleThinkingExpanded() { _uiState.update { it.copy(thinkingCardsStartExpanded = !it.thinkingCardsStartExpanded) }; viewModelScope.launch { chatPreferencesStore.setThinkingCardsStartExpanded(!uiState.value.thinkingCardsStartExpanded) } }
+    fun toggleToolExpanded() { _uiState.update { it.copy(toolCardsStartExpanded = !it.toolCardsStartExpanded) }; viewModelScope.launch { chatPreferencesStore.setToolCardsStartExpanded(!uiState.value.toolCardsStartExpanded) } }
+    fun toggleStreamedTextAnimation() { _uiState.update { it.copy(isStreamedTextAnimationEnabled = !it.isStreamedTextAnimationEnabled) }; viewModelScope.launch { chatPreferencesStore.setIsStreamedTextAnimationEnabled(!uiState.value.isStreamedTextAnimationEnabled) } }
+    fun toggleResponseTimestamps() { _uiState.update { it.copy(showsAssistantTurnTimestamps = !it.showsAssistantTurnTimestamps) }; viewModelScope.launch { chatPreferencesStore.setShowsAssistantTurnTimestamps(!uiState.value.showsAssistantTurnTimestamps) } }
+    fun toggleWrapCodeBlocks() { _uiState.update { it.copy(wrapsCodeBlockLines = !it.wrapsCodeBlockLines) }; viewModelScope.launch { chatPreferencesStore.setWrapsCodeBlockLines(!uiState.value.wrapsCodeBlockLines) } }
+    fun toggleRtlChat() { _uiState.update { it.copy(rtlChatLayoutEnabled = !it.rtlChatLayoutEnabled) }; viewModelScope.launch { chatPreferencesStore.setRtlChatLayoutEnabled(!uiState.value.rtlChatLayoutEnabled) } }
+    fun toggleHideAttachmentPaths() { _uiState.update { it.copy(hidesAttachmentPaths = !it.hidesAttachmentPaths) }; viewModelScope.launch { chatPreferencesStore.setHidesAttachmentPaths(!uiState.value.hidesAttachmentPaths) } }
     fun toggleTintPrimaryActions() { _uiState.update { it.copy(tintsPrimaryActions = !it.tintsPrimaryActions) } }
-    fun toggleHaptics() { _uiState.update { it.copy(isHapticsEnabled = !it.isHapticsEnabled) } }
-    fun setStreamingSendBehavior(behavior: String) { _uiState.update { it.copy(streamingSendBehavior = behavior) } }
+    fun toggleHaptics() { _uiState.update { it.copy(isHapticsEnabled = !it.isHapticsEnabled) }; viewModelScope.launch { chatPreferencesStore.setIsHapticsEnabled(!uiState.value.isHapticsEnabled) } }
+    fun setStreamingSendBehavior(behavior: String) { _uiState.update { it.copy(streamingSendBehavior = behavior) }; viewModelScope.launch { chatPreferencesStore.setStreamingSendBehavior(behavior) } }
 
     /** Doesn't need to navigate or flip [SettingsUiState.isSigningOut] back -- once
      * [AuthRepository.state] flips to `Unconfigured`, `HermexNavGraph` routes back to Onboarding

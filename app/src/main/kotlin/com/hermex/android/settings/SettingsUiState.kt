@@ -41,4 +41,6 @@ data class SettingsUiState(
     val isHapticsEnabled: Boolean = true,
     /** Streaming send behavior: steer, cancel-and-send, or queue. */
     val streamingSendBehavior: String = "steer",
+    /** STT provider: on_device or server. */
+    val sttProvider: String = "on_device",
 )

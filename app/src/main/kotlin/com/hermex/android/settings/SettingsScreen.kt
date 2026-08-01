@@ -65,6 +65,10 @@ import com.hermex.android.BuildConfig
 import com.hermex.android.PRIVACY_POLICY_URL
 import com.hermex.android.GITHUB_REPO_URL
 import com.hermex.android.R
+import com.hermex.android.settings.DisplaySettingsSections
+import com.hermex.android.settings.SessionDisplaySettingsSection
+import com.hermex.android.settings.ChatDisplaySettingsSection
+import com.hermex.android.settings.InteractionSettingsSection
 import com.hermex.android.core.storage.AppIconVariant
 import com.hermex.android.core.storage.HeaderLogoColor
 import com.hermex.android.ui.theme.HermexReadableContent
@@ -388,7 +392,62 @@ fun SettingsScreen(
                     )
                 }
 
+                
                 Spacer(Modifier.height(24.dp))
+                SectionLabel("Session Display")
+                Card {
+                    SessionDisplaySettingsSection(
+                        showMessageCount = uiState.showSessionMessageCount,
+                        showWorkspace = uiState.showSessionWorkspace,
+                        showCronSessions = uiState.showCronSessions,
+                        showCliSessions = uiState.showCliSessions,
+                        showClaudeCodeSessions = uiState.showClaudeCodeSessions,
+                        showSubagentSessions = uiState.showSubagentSessions,
+                        onToggleMessageCount = viewModel::toggleSessionMessageCount,
+                        onToggleWorkspace = viewModel::toggleSessionWorkspace,
+                        onToggleCronSessions = viewModel::toggleCronSessions,
+                        onToggleCliSessions = viewModel::toggleCliSessions,
+                        onToggleClaudeCodeSessions = viewModel::toggleClaudeCodeSessions,
+                        onToggleSubagentSessions = viewModel::setShowSubagentSessions,
+                    )
+                }
+
+                Spacer(Modifier.height(24.dp))
+                SectionLabel("Chat Display")
+                Card {
+                    ChatDisplaySettingsSection(
+                        showThinkingAndToolCards = uiState.showsThinkingAndToolCards,
+                        thinkingExpanded = uiState.thinkingCardsStartExpanded,
+                        toolExpanded = uiState.toolCardsStartExpanded,
+                        streamAnimation = uiState.isStreamedTextAnimationEnabled,
+                        responseTimestamps = uiState.showsAssistantTurnTimestamps,
+                        wrapCodeBlocks = uiState.wrapsCodeBlockLines,
+                        rtlLayout = uiState.rtlChatLayoutEnabled,
+                        hideAttachmentPaths = uiState.hidesAttachmentPaths,
+                        onToggleThinkingTools = viewModel::toggleThinkingAndToolCards,
+                        onToggleThinkingExpanded = viewModel::toggleThinkingExpanded,
+                        onToggleToolExpanded = viewModel::toggleToolExpanded,
+                        onToggleStreamAnimation = viewModel::toggleStreamedTextAnimation,
+                        onToggleTimestamps = viewModel::toggleResponseTimestamps,
+                        onToggleWrapCode = viewModel::toggleWrapCodeBlocks,
+                        onToggleRtl = viewModel::toggleRtlChat,
+                        onToggleHidePaths = viewModel::toggleHideAttachmentPaths,
+                    )
+                }
+
+                Spacer(Modifier.height(24.dp))
+                SectionLabel("Interaction")
+                Card {
+                    InteractionSettingsSection(
+                        hapticsEnabled = uiState.isHapticsEnabled,
+                        streamingBehavior = uiState.streamingSendBehavior,
+                        sttProvider = "on_device",
+                        onToggleHaptics = viewModel::toggleHaptics,
+                        onSetStreamingBehavior = viewModel::setStreamingSendBehavior,
+                        onSetSttProvider = { _ -> },
+                    )
+                }
+Spacer(Modifier.height(24.dp))
                 SectionLabel("Account")
                 Column(
                     modifier = Modifier
