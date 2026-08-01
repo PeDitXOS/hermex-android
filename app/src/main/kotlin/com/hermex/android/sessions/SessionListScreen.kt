@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
@@ -327,7 +328,17 @@ fun SessionListBody(
         onRefresh = viewModel::refresh,
         modifier = modifier,
     ) {
+        val listState = rememberLazyListState()
+        // Auto-scroll to top when sessions change
+        val previousSessionCount = remember { mutableStateOf(uiState.sessions.size) }
+        LaunchedEffect(uiState.sessions.size) {
+            if (uiState.sessions.size > previousSessionCount.value && previousSessionCount.value > 0) {
+                listState.animateScrollToItem(0)
+            }
+            previousSessionCount.value = uiState.sessions.size
+        }
         LazyColumn(
+            state = listState,
             modifier = Modifier.fillMaxSize(),
         ) {
             uiState.cacheStatusMessage?.let { message ->

@@ -7,6 +7,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -61,6 +62,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -202,6 +205,25 @@ fun ChatComposer(
     DisposableEffect(Unit) {
         onDispose {
             voiceHandler.stopListening()
+            voiceRecorder.cancel()
+        }
+    }
+    // Track recording elapsed time for UI display
+    LaunchedEffect(isRecording) {
+        if (isRecording) {
+            while (isActive) {
+                voiceRecordingElapsedMs = voiceRecorder.elapsedMs
+                if (!voiceRecorder.isRecording) {
+                    // Auto-stopped (max duration or error)
+                    isRecording = false
+                    val note = voiceRecorder.finish()
+                    if (note != null) actions.onSendVoiceNote(note.file, note.filename)
+                    break
+                }
+                delay(200)
+            }
+        } else {
+            voiceRecordingElapsedMs = 0L
         }
     }
     // Capped and centered rather than left plain fillMaxWidth(), so the dock doesn't stretch to an

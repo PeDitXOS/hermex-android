@@ -16,6 +16,7 @@ import com.hermex.android.core.storage.AppearancePreferencesStore
 import com.hermex.android.core.storage.ChatPreferencesStore
 import com.hermex.android.core.storage.NoOpAppearancePreferencesStore
 import com.hermex.android.core.storage.NoOpChatPreferencesStore
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -23,6 +24,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 private const val OFFLINE_CACHE_MESSAGE = "Unable to reach server -- showing cached sessions"
+private const val AUTO_REFRESH_INTERVAL_MS = 30_000L // 30 seconds
 
 /**
  * A 401 during any call here is handled globally: [AuthRepository]'s state flips to LoggedOut
@@ -44,6 +46,13 @@ class SessionListViewModel(
         loadHeaderLogoColor()
         loadUserInitials()
         loadShowSubagentSessions()
+        // Auto-refresh session list every 30 seconds
+        viewModelScope.launch {
+            while (true) {
+                delay(AUTO_REFRESH_INTERVAL_MS)
+                silentRefresh()
+            }
+        }
     }
 
     /** Re-reads just the header color preference (fast, local, no network) -- used to reflect a
@@ -189,6 +198,26 @@ class SessionListViewModel(
                 _uiState.update { it.copy(errorMessage = e.message ?: "Could not move session.") }
             } finally {
                 _uiState.update { it.copy(isMutating = false) }
+            }
+        }
+    }
+
+    /** Silent background refresh — updates sessions without showing loading/refreshing indicators. */
+    private fun silentRefresh() {
+        viewModelScope.launch {
+            val api = authRepository.apiForActiveServer() ?: return@launch
+            try {
+                val response = safeApiCall { api.sessions() }
+                val sessions = response.sessions.orEmpty()
+                if (sessions.isNotEmpty()) {
+                    _uiState.update { it.copy(sessions = sessions) }
+                    val serverId = authRepository.activeServerId()
+                    if (serverId != null) {
+                        offlineCacheRepository.saveSessions(serverId, sessions)
+                    }
+                }
+            } catch (_: ApiError) {
+                // Silently fail — don't disturb the user
             }
         }
     }
