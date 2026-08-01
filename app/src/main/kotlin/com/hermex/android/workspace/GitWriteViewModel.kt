@@ -99,7 +99,7 @@ class GitWriteViewModel(
             try {
                 val api = authRepository.apiForActiveServer() ?: return@launch
                 val response = safeApiCall { api.gitBranches(sessionId) }
-                val branches = response.branches?.mapNotNull { it.name } ?: emptyList()
+                val branches = response.branches?.branches?.mapNotNull { it.name } ?: emptyList()
                 _uiState.update { it.copy(branches = branches) }
             } catch (_: ApiError) {}
         }

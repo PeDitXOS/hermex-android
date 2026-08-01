@@ -2,8 +2,8 @@
 <shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
     <shortcut
         android:shortcutId="new_chat"
-        android:shortcutShortLabel="New Chat"
-        android:shortcutLongLabel="Start New Chat"
+        android:shortcutShortLabel="@string/shortcut_new_chat"
+        android:shortcutLongLabel="@string/shortcut_new_chat_long"
         android:enabled="true"
         android:icon="@android:drawable/ic_menu_send">
         <intent
@@ -13,8 +13,8 @@
     </shortcut>
     <shortcut
         android:shortcutId="new_chat_voice"
-        android:shortcutShortLabel="Voice Chat"
-        android:shortcutLongLabel="New Chat with Voice"
+        android:shortcutShortLabel="@string/shortcut_voice_chat"
+        android:shortcutLongLabel="@string/shortcut_voice_chat_long"
         android:enabled="true"
         android:icon="@android:drawable/ic_btn_speak_now">
         <intent

@@ -54,54 +54,54 @@ fun DefaultModelPickerScreen(
                 contentPadding = PaddingValues(horizontal = 16.dp),
             ) {
                 modelGroups.forEach { group ->
-                    // Provider section header
-                    item(key = "header_${group.provider}") {
-                        Text(
-                            text = group.provider,
-                            style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.padding(vertical = 8.dp),
-                        )
-                    }
-
-                    // Models in this group
-                    val filteredModels = group.models.filter {
-                        searchQuery.isBlank() || it.name.contains(searchQuery, ignoreCase = true)
-                    }
-                    items(filteredModels, key = { it.name }) { model ->
-                        val isSelected = model.name == currentModel
-                        Surface(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    onModelSelected(model.name, group.provider)
-                                    onDismiss()
-                                },
-                            color = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
-                                    else MaterialTheme.colorScheme.surface,
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 12.dp, horizontal = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Text(
-                                    text = model.name,
-                                    modifier = Modifier.weight(1f),
-                                    style = MaterialTheme.typography.bodyLarge,
-                                )
-                                if (isSelected) {
-                                    Icon(
-                                        Icons.Filled.Check,
-                                        contentDescription = "Selected",
-                                        tint = MaterialTheme.colorScheme.primary,
+                                // Provider section header
+                                item(key = "header_${group.name}") {
+                                    Text(
+                                        text = group.name,
+                                        style = MaterialTheme.typography.labelLarge,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.padding(vertical = 8.dp),
                                     )
                                 }
+
+                                // Models in this group
+                                val filteredModels = group.models.filter {
+                                    searchQuery.isBlank() || it.displayName.contains(searchQuery, ignoreCase = true)
+                                }
+                                items(filteredModels, key = { it.id }) { model ->
+                                    val isSelected = model.id == currentModel
+                                    Surface(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable {
+                                                onModelSelected(model.id, group.providerId)
+                                                onDismiss()
+                                            },
+                                        color = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
+                                            else MaterialTheme.colorScheme.surface,
+                                    ) {
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(vertical = 12.dp, horizontal = 4.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                        ) {
+                                            Text(
+                                                text = model.displayName,
+                                                modifier = Modifier.weight(1f),
+                                                style = MaterialTheme.typography.bodyLarge,
+                                            )
+                                            if (isSelected) {
+                                                Icon(
+                                                    Icons.Filled.Check,
+                                                    contentDescription = "Selected",
+                                                    tint = MaterialTheme.colorScheme.primary,
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
                             }
-                        }
-                    }
-                }
             }
         }
     }

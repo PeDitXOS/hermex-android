@@ -4,4 +4,8 @@
     <string name="widget_title">Hermex</string>
     <string name="widget_subtitle">Tap to open</string>
     <string name="widget_new_chat">New Chat</string>
+    <string name="shortcut_new_chat">New Chat</string>
+    <string name="shortcut_new_chat_long">Start New Chat</string>
+    <string name="shortcut_voice_chat">Voice Chat</string>
+    <string name="shortcut_voice_chat_long">New Chat with Voice</string>
 </resources>

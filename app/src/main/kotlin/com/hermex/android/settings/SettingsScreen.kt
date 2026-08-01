@@ -65,7 +65,6 @@ import com.hermex.android.BuildConfig
 import com.hermex.android.PRIVACY_POLICY_URL
 import com.hermex.android.GITHUB_REPO_URL
 import com.hermex.android.R
-import com.hermex.android.settings.DisplaySettingsSections
 import com.hermex.android.settings.SessionDisplaySettingsSection
 import com.hermex.android.settings.ChatDisplaySettingsSection
 import com.hermex.android.settings.InteractionSettingsSection

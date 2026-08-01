@@ -5,16 +5,19 @@ import androidx.lifecycle.viewModelScope
 import com.hermex.android.auth.AuthRepository
 import com.hermex.android.core.network.ApiError
 import com.hermex.android.core.network.safeApiCall
+import com.hermex.android.core.network.dto.ModelsLiveResponse
+import com.hermex.android.core.network.dto.ModelOptionDto
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
-data class ProvidersUiState(
-    val isLoading: Boolean = false,
-    val providers: List<ProviderStatus> = emptyList(),
-    val errorMessage: String? = null,
+data class ProviderStatus(
+    val name: String,
+    val isConfigured: Boolean,
+    val isHealthy: Boolean,
+    val modelCount: Int,
 )
 
 class ProvidersViewModel(
@@ -29,14 +32,15 @@ class ProvidersViewModel(
             try {
                 val api = authRepository.apiForActiveServer() ?: throw ApiError.Network(Exception("Not signed in"))
                 val response = safeApiCall { api.modelsLive() }
-                val providers = response.providers?.map { provider ->
+                val models = response.models ?: emptyList()
+                val providers = models.groupBy { it.providerId ?: "unknown" }.map { (providerId, models) ->
                     ProviderStatus(
-                        name = provider.name,
+                        name = providerId,
                         isConfigured = true,
                         isHealthy = true,
-                        modelCount = provider.models?.size ?: 0,
+                        modelCount = models.size,
                     )
-                } ?: emptyList()
+                }
                 _uiState.update { it.copy(isLoading = false, providers = providers) }
             } catch (e: ApiError) {
                 _uiState.update { it.copy(isLoading = false, errorMessage = e.message ?: "Failed to load providers") }
