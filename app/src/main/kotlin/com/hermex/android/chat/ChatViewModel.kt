@@ -1546,7 +1546,7 @@ class ChatViewModel(
                 if (activeStreamId != null) cancelStream()
                 awaitPendingCancel()
                 val response = safeApiCall {
-                    api.branchSession(hermex.android.core.network.dto.BranchSessionRequest(
+                    api.branchSession(BranchSessionRequest(
                         session_id = sessionId,
                     ))
                 }
