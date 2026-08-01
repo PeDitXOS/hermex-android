@@ -71,7 +71,8 @@ fun ArchivedSessionsScreen(
                     Surface(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { onSessionClick(session.sessionId ?: "") },\n                        shape = MaterialTheme.shapes.medium,
+                            .clickable { onSessionClick(session.sessionId ?: "") },
+                        shape = MaterialTheme.shapes.medium,
                         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
                     ) {
                         Column(modifier = Modifier.padding(16.dp)) {

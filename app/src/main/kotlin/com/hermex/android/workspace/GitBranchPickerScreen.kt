@@ -47,7 +47,7 @@ fun GitBranchPickerScreen(
                             if (!isCurrent) onBranchSelected(branch)
                         },
                     color = if (isCurrent) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
-                            else MaterialTheme.colorScheme.surface,
+                        else MaterialTheme.colorScheme.surface,
                 ) {
                     Row(
                         modifier = Modifier
