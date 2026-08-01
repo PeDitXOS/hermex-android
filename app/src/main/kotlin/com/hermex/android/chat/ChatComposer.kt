@@ -412,7 +412,6 @@ fun ChatComposer(
                                 )
                             }
                         }
-
                         AttachFileButton(
                             enabled = composerState.isAttachButtonEnabled,
                             isUploading = composerState.isUploadingAttachment,
@@ -433,6 +432,10 @@ fun ChatComposer(
                             onOpenModelPicker = actions.onOpenModelPicker,
                             onSelectModel = actions.onSelectModel,
                         )
+                        )
+                    }
+                }
+            }
         }
     }
 }
@@ -496,6 +499,8 @@ private fun ComposerChip(
  * available icon and is what the MVP spec explicitly allows as a fallback. Opens the system
  * document picker (Storage Access Framework), so no storage permission is needed: the picker
  * itself grants this app read access to whatever the user selects. */
+@Composable
+private fun AttachFileButton(
     enabled: Boolean,
     isUploading: Boolean,
     onAttachFile: (Uri) -> Unit,
