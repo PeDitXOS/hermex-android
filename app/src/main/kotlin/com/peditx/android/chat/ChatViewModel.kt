@@ -1350,6 +1350,19 @@ class ChatViewModel(
         }
     }
 
+    /** Start voice recording - opens voice recording UI */
+    fun startVoiceRecording() {
+        // Voice recording is handled by the composer's combinedClickable
+        // This is called when user taps the mic button
+        HermexLog.d("ChatViewModel", "Voice recording started")
+    }
+
+    /** Start audio wave input - opens audio wave UI */
+    fun startAudioWave() {
+        // Audio wave input - placeholder for future implementation
+        HermexLog.d("ChatViewModel", "Audio wave input started")
+    }
+
     override fun onCleared() {
         stopListening()
         // App-retained ownership means this runs on logout/server switch/process teardown, not

@@ -174,6 +174,9 @@ fun ChatScreen(
                 },
                 actions = {
                     IconButton(onClick = onOpenWorkspace) {
+                        Icon(Icons.Filled.RemoveRedEye, contentDescription = "Eye")
+                    }
+                    IconButton(onClick = onOpenWorkspace) {
                         Icon(Icons.AutoMirrored.Filled.List, contentDescription = "Files")
                     }
                     IconButton(onClick = viewModel::loadSession) {
@@ -247,6 +250,8 @@ fun ChatScreen(
                     onRemoveAttachment = viewModel::removePendingAttachment,
                     onSendVoiceNote = viewModel::sendVoiceNote,
                     onRefresh = viewModel::loadSession,
+                    onStartVoiceRecording = viewModel::startVoiceRecording,
+                    onStartAudioWave = viewModel::startAudioWave,
                 ),
             )
         },
@@ -372,6 +377,23 @@ fun ChatScreen(
                             verticalArrangement = Arrangement.spacedBy(12.dp),
                         ) {
                             val canMutateHistory = !uiState.isSending && !uiState.isStreaming
+                            
+                            // Show "Start chatting" when no messages
+                            if (uiState.messages.isEmpty() && !uiState.isStreaming && uiState.streamingText.isEmpty()) {
+                                item(key = "start-chatting") {
+                                    Box(
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        Text(
+                                            text = "Start chatting",
+                                            style = MaterialTheme.typography.bodyLarge,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                        )
+                                    }
+                                }
+                            }
+                            
                             uiState.messages.forEachIndexed { index, message ->
                                 toolCallsByAnchor[index]?.forEach { toolCall ->
                                     item(key = toolCall.stableId) {
