@@ -295,7 +295,7 @@ fun ChatComposer(
                                 .weight(1f)
                                 .height(48.dp)
                                 .background(
-                                    color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                                    color = MaterialTheme.colorScheme.surfaceContainer,
                                     shape = RoundedCornerShape(HermexRadii.Composer)
                                 )
                         ) {
@@ -328,10 +328,13 @@ fun ChatComposer(
                                     singleLine = false,
                                     shape = RoundedCornerShape(HermexRadii.Composer),
                                     colors = OutlinedTextFieldDefaults.colors(
-                                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                                        focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainer,
+                                        focusedContainerColor = MaterialTheme.colorScheme.surfaceContainer,
                                         unfocusedBorderColor = Color.Transparent,
                                         focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
+                                        cursorColor = MaterialTheme.colorScheme.primary,
+                                        textColor = MaterialTheme.colorScheme.onSurface,
+                                        placeholderTextColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                                     ),
                                     label = null,
                                 )
@@ -342,10 +345,10 @@ fun ChatComposer(
                                         Icons.Filled.Close to "Stop" to MaterialTheme.colorScheme.errorContainer to MaterialTheme.colorScheme.onErrorContainer
                                     }
                                     composerState.isStreaming -> {
-                                        Icons.AutoMirrored.Filled.Send to "Steer" to MaterialTheme.colorScheme.primaryContainer to MaterialTheme.colorScheme.onPrimaryContainer
+                                        Icons.AutoMirrored.Filled.Send to "Steer" to MaterialTheme.colorScheme.primary to MaterialTheme.colorScheme.onPrimary
                                     }
                                     else -> {
-                                        Icons.AutoMirrored.Filled.Send to "Send" to MaterialTheme.colorScheme.primaryContainer to MaterialTheme.colorScheme.onPrimaryContainer
+                                        Icons.AutoMirrored.Filled.Send to "Send" to MaterialTheme.colorScheme.primary to MaterialTheme.colorScheme.onPrimary
                                     }
                                 }
                                 val icon = actionButton.first.first.first
