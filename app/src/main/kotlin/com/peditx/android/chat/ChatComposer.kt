@@ -8,10 +8,13 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -24,6 +27,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
@@ -74,13 +78,8 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.KeyboardActions
-import androidx.compose.ui.text.input.KeyboardOptions
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.peditx.hermex.core.network.dto.ModelCatalogGroup
 import com.peditx.hermex.core.network.dto.ModelCatalogOption
@@ -321,26 +320,12 @@ fun ChatComposer(
                                     enabled = composerState.isTextFieldEnabled,
                                     maxLines = 5,
                                     singleLine = false,
-                                    keyboardOptions = KeyboardOptions(
-                                        imeAction = ImeAction.Send,
-                                        keyboardType = KeyboardType.Text
-                                    ),
-                                    keyboardActions = KeyboardActions(
-                                        onDone = {
-                                            if (composerState.canSend && !composerState.isStreaming && !composerState.showStopButton) {
-                                                actions.onSend()
-                                            }
-                                        }
-                                    ),
                                     shape = RoundedCornerShape(HermexRadii.Composer),
                                     colors = OutlinedTextFieldDefaults.colors(
-                                        unfocusedContainerColor = Color.Transparent,
-                                        focusedContainerColor = Color.Transparent,
+                                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                                        focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
                                         unfocusedBorderColor = Color.Transparent,
-                                        focusedBorderColor = Color.Transparent,
-                                        cursorColor = MaterialTheme.colorScheme.primary,
-                                        textColor = MaterialTheme.colorScheme.onSurface,
-                                        placeholderTextColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                        focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
                                     ),
                                     label = null,
                                 )
@@ -363,27 +348,24 @@ fun ChatComposer(
                                 val containerColor = colors.first
                                 val contentColor = colors.second
 
-                                // Use simple clickable + longClickable instead of pointerInput
-                                var longPressDetected by remember { mutableStateOf(false) }
                                 Box(
                                     modifier = Modifier
-                                        .size(40.dp)
-                                        .clickable {
-                                            haptic.performHapticFeedback(HapticFeedbackType.LightTouch)
-                                            when {
-                                                composerState.showStopButton -> actions.onStop()
-                                                composerState.isStreaming -> {
-                                                    if (composerState.canSend) actions.onSteer()
-                                                }
-                                                else -> {
-                                                    if (composerState.canSend) actions.onSend()
-                                                }
-                                            }
-                                        }
+                                        .size(48.dp)
                                         .combinedClickable(
+                                            onClick = {
+                                                haptic.performHapticFeedback(HapticFeedbackType.LightTouch)
+                                                when {
+                                                    composerState.showStopButton -> actions.onStop()
+                                                    composerState.isStreaming -> {
+                                                        if (composerState.canSend) actions.onSteer()
+                                                    }
+                                                    else -> {
+                                                        if (composerState.canSend) actions.onSend()
+                                                    }
+                                                }
+                                            },
                                             onLongClick = {
                                                 if (!composerState.isStreaming && !composerState.showStopButton) {
-                                                    longPressDetected = true
                                                     val hasPermission = ContextCompat.checkSelfPermission(
                                                         context, Manifest.permission.RECORD_AUDIO
                                                     ) == PackageManager.PERMISSION_GRANTED
@@ -395,9 +377,6 @@ fun ChatComposer(
                                                     }
                                                 }
                                             },
-                                            onClick = {
-                                                // handled by clickable above
-                                            },
                                             onDoubleClick = {}
                                         )
                                         .padding(end = 4.dp),
@@ -407,7 +386,7 @@ fun ChatComposer(
                                     if (isRecording) {
                                         Box(
                                             modifier = Modifier
-                                                .size(40.dp)
+                                                .size(48.dp)
                                                 .background(
                                                     color = MaterialTheme.colorScheme.primaryContainer,
                                                     shape = RoundedCornerShape(HermexRadii.Composer)
@@ -437,18 +416,18 @@ fun ChatComposer(
                                                 // Click handled by combinedClickable
                                             },
                                             enabled = composerState.canSend || composerState.showStopButton,
-                                            colors = FilledIconButtonDefaults.filledIconButtonColors(
+                                            colors = IconButtonDefaults.filledIconButtonColors(
                                                 containerColor = containerColor,
                                                 contentColor = contentColor,
                                                 disabledContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
                                                 disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
                                             ),
-                                            modifier = Modifier.size(40.dp),
+                                            modifier = Modifier.size(48.dp),
                                         ) {
                                             Icon(
                                                 icon,
                                                 contentDescription = contentDesc,
-                                                modifier = Modifier.size(20.dp),
+                                                modifier = Modifier.size(24.dp),
                                             )
                                         }
                                     }
@@ -488,7 +467,7 @@ private fun ComposerChip(
     } else {
         MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
     }
-    val chipContent: @Composable (androidx.compose.foundation.layout.RowScope.() -> Unit) = {
+    val chipContent: @Composable RowScope.() -> Unit = {
         if (isLoading) {
             CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
         } else {
@@ -589,92 +568,78 @@ private fun PendingAttachmentStrip(
                     if (attachment.isImage == true && attachment.path != null) {
                         // Thumbnail for images
                         Box(
-                            modifier = Modifier.size(40.dp),
+                            modifier = Modifier
+                                .size(40.dp),
                             contentAlignment = Alignment.Center,
                         ) {
                             SubcomposeAsyncImage(
-                                model = attachment.path!!,
-                                contentDescription = null,
-                                contentScale = ContentScale.Crop,
+                                model = attachment.path,
+                                contentDescription = attachment.name ?: "Attachment thumbnail",
                                 modifier = Modifier
-                                    .size(40.dp)
+                                    .fillMaxSize()
                                     .clip(RoundedCornerShape(HermexRadii.Accessory)),
-                                placeholder = {
+                                contentScale = ContentScale.Crop,
+                                loading = {
                                     Box(
-                                        modifier = Modifier.size(40.dp)
-                                            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-                                            .clip(RoundedCornerShape(HermexRadii.Accessory)),
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .background(
+                                                MaterialTheme.colorScheme.surfaceContainerLow,
+                                                RoundedCornerShape(HermexRadii.Accessory),
+                                            ),
                                         contentAlignment = Alignment.Center,
                                     ) {
                                         CircularProgressIndicator(
-                                            modifier = Modifier.size(20.dp),
+                                            modifier = Modifier.size(16.dp),
                                             strokeWidth = 2.dp,
                                         )
                                     }
                                 },
                                 error = {
-                                    Box(
-                                        modifier = Modifier.size(40.dp)
-                                            .background(MaterialTheme.colorScheme.errorContainer)
-                                            .clip(RoundedCornerShape(HermexRadii.Accessory)),
-                                        contentAlignment = Alignment.Center,
-                                    ) {
-                                        Icon(
-                                            Icons.Filled.Image,
-                                            contentDescription = null,
-                                            tint = MaterialTheme.colorScheme.onErrorContainer,
-                                            modifier = Modifier.size(20.dp),
-                                        )
-                                    }
+                                    Icon(
+                                        Icons.Filled.Image,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(24.dp),
+                                    )
                                 },
                             )
                         }
                     } else {
-                        // File type icon
-                        Box(
-                            modifier = Modifier
-                                .size(40.dp)
-                                .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-                                .clip(RoundedCornerShape(HermexRadii.Accessory)),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Icon(
-                                attachment.mime?.fileTypeIcon() ?? Icons.Filled.Image,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(20.dp),
-                            )
-                        }
+                        Icon(
+                            fileTypeIcon(attachment.mime),
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(24.dp).padding(8.dp),
+                        )
                     }
-                    Spacer(Modifier.width(8.dp))
                     Column(
                         modifier = Modifier
                             .weight(1f)
-                            .padding(end = 8.dp, top = 4.dp, bottom = 4.dp),
+                            .padding(end = 8.dp),
                     ) {
                         Text(
-                            text = attachment.name ?: "Unknown file",
+                            text = attachment.name ?: "File",
                             style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurface,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
-                        Text(
-                            text = attachment.size?.let { Formatter.formatShortFileSize(context, it) }
-                                ?: "Unknown size",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+                        attachment.size?.let { size ->
+                            Text(
+                                text = Formatter.formatFileSize(context, size),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                            )
+                        }
                     }
                     IconButton(
                         onClick = { onRemove(attachment.id) },
-                        modifier = Modifier.padding(end = 4.dp).size(32.dp),
+                        modifier = Modifier.padding(end = 8.dp),
                     ) {
                         Icon(
                             Icons.Filled.Close,
-                            contentDescription = "Remove",
+                            contentDescription = "Remove attachment",
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(18.dp),
                         )
                     }
                 }
