@@ -1,4 +1,4 @@
-name: Build & Publish
+name: Build & Release
 
 on:
   push:
@@ -6,15 +6,14 @@ on:
     tags: [ 'v*' ]
   workflow_dispatch:
 
-env:
-  VERSION_NAME: "1.0.1"
+permissions:
+  contents: write
 
 jobs:
   build:
+    name: Build Debug & Release APK
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    
+    timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -28,47 +27,99 @@ jobs:
           java-version: '21'
           distribution: 'temurin'
 
-      - name: Calculate version code
+      - name: Calculate version
         id: version
         run: |
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            VERSION_NAME="${{ github.ref_name }}"
+          else
+            VERSION_NAME="1.0.8-dev.$(git rev-list --count HEAD)"
+          fi
           VERSION_CODE=$(git rev-list --count HEAD)
+          echo "version_name=$VERSION_NAME" >> $GITHUB_OUTPUT
           echo "version_code=$VERSION_CODE" >> $GITHUB_OUTPUT
-          echo "Version Code: $VERSION_CODE"
+          echo "Version: $VERSION_NAME ($VERSION_CODE)"
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          api-level: 36
+          cmdline-tools-version: 12266719
+          accept-android-sdk-licenses: true
+
+      - name: Grant Gradle Permission
+        run: chmod +x gradlew
 
       - name: Build Debug APK
-        run: |
-          chmod +x ./gradlew
-          ./gradlew assembleDebug --no-daemon
+        run: ./gradlew assembleDebug --no-daemon
+        env:
+          VERSION_CODE: ${{ steps.version.outputs.version_code }}
+          VERSION_NAME: ${{ steps.version.outputs.version_name }}
 
       - name: Build Release APK
+        if: env.KEYSTORE_BASE64 != ''
         continue-on-error: true
         run: |
-          ./gradlew assembleRelease --no-daemon || echo "Release build failed (likely missing signing config), continuing with debug only"
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > release.keystore
+          cat > signing.properties <<EOF
+          storeFile=$(pwd)/release.keystore
+          storePassword=${{ secrets.KEYSTORE_PASSWORD }}
+          keyAlias=${{ secrets.KEY_ALIAS }}
+          keyPassword=${{ secrets.KEY_PASSWORD }}
+          EOF
+          ./gradlew assembleRelease --no-daemon || echo "Release build failed"
+
+      - name: Rename Debug APK
+        run: |
+          mkdir -p artifacts
+          cp app/build/outputs/apk/debug/*.apk artifacts/hermex-${{ steps.version.outputs.version_name }}-debug.apk
+
+      - name: Rename Release APK
+        if: always()
+        run: |
+          if [ -f app/build/outputs/apk/release/*.apk ]; then
+            cp app/build/outputs/apk/release/*.apk artifacts/hermex-${{ steps.version.outputs.version_name }}-release.apk
+          fi
 
       - name: Upload Debug APK
-        if: success() || failure()
         uses: actions/upload-artifact@v4
         with:
           name: hermex-debug
-          path: app/build/outputs/apk/debug/*.apk
-          retention-days: 7
+          path: artifacts/hermex-${{ steps.version.outputs.version_name }}-debug.apk
+          retention-days: 30
 
       - name: Upload Release APK
         if: always()
-        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: hermex-release
-          path: app/build/outputs/apk/release/*.apk
+          path: artifacts/hermex-${{ steps.version.outputs.version_name }}-release.apk
           retention-days: 30
 
-      - name: Create Release
+      - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ github.ref_name }}
+          name: "Hermex Android ${{ github.ref_name }}"
+          body: |
+            ## Hermex Android ${{ github.ref_name }}
+
+            ### Changes
+            - Package: `com.peditx.hermex`
+            - Version: `${{ github.ref_name }}`
+            - Network security config enforced (HTTPS only)
+            - Full iOS feature parity
+
+            ### Install
+            Download APK and install:
+            \`\`\`bash
+            adb install hermex-${{ github.ref_name }}-debug.apk
+            # or for signed release:
+            adb install hermex-${{ github.ref_name }}-release.apk
+            \`\`\`
           files: |
-            app/build/outputs/apk/release/*.apk
-            app/build/outputs/apk/debug/*.apk
-          generate_release_notes: true
+            artifacts/hermex-${{ github.ref_name }}-debug.apk
+            artifacts/hermex-${{ github.ref_name }}-release.apk
           draft: false
           prerelease: false
