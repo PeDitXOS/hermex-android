@@ -428,7 +428,7 @@ fun ChatComposer(
                                             modifier = Modifier.size(48.dp),
                                         ) {
                                             Icon(
-                                                icon,
+                                                imageVector = icon,
                                                 contentDescription = contentDesc,
                                                 modifier = Modifier.size(24.dp),
                                             )
