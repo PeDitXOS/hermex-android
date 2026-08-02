@@ -1,5 +1,7 @@
 package com.peditx.hermex.chat
 
+import android.net.Uri
+import android.text.format.Formatter
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -85,7 +87,6 @@ import com.peditx.hermex.core.network.dto.fileTypeIcon
 import com.peditx.hermex.core.util.HermexLog
 import com.peditx.hermex.ui.theme.HermexRadii
 import java.io.File
-import android.net.Uri
 
 /** [ChatComposer]'s callbacks, grouped so adding a future action (slash commands) doesn't widen
  * [ChatComposer]'s own parameter list. */
@@ -188,6 +189,8 @@ fun ChatComposer(
     val snackbarHostState = remember { SnackbarHostState() }
     val coroutineScope = rememberCoroutineScope()
     val recordAudioPermission = android.Manifest.permission.RECORD_AUDIO
+
+    // Permission launcher for microphone
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
     ) { granted ->
@@ -201,10 +204,13 @@ fun ChatComposer(
                 )
             }
         }
+    }
+
     // File picker launcher for attach button
     val filePickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let(actions.onAttachFile)
     }
+
     // Clean up SpeechRecognizer on dispose
     DisposableEffect(Unit) {
         onDispose {
@@ -212,6 +218,7 @@ fun ChatComposer(
             voiceRecorder.cancel()
         }
     }
+
     // Track recording elapsed time for UI display
     LaunchedEffect(isRecording) {
         if (isRecording) {
@@ -230,6 +237,7 @@ fun ChatComposer(
             voiceRecordingElapsedMs = 0L
         }
     }
+
     // Capped and centered rather than left plain fillMaxWidth(), so the dock doesn't stretch to an
     // awkward, hard-to-type-in width on a large tablet's wide-layout right pane. On any phone-scale
     // width (compact or the adaptive shell's ~400dp right pane) the cap never binds, so this Box is
@@ -294,7 +302,7 @@ fun ChatComposer(
                 }
 
                 Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
-                    // Single-row pill: [+] [Ask Conduit] [🎤] [waveform]
+                    // Single-row pill: [+] [Ask Hermes] [Steer/Send] [🎤] [waveform]
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -508,6 +516,47 @@ private fun AttachFileButton(
 }
 
 @Composable
+private fun ProfileSelectorButton(
+    profileOptions: List<ProfileSummary>,
+    selectedProfileName: String?,
+    isSwitchingProfile: Boolean,
+    onSelectProfile: (String) -> Unit,
+) {
+    val displayName = profileOptions.firstOrNull { it.normalizedName == selectedProfileName }?.displayName
+        ?: selectedProfileName
+        ?: "Profile"
+    ComposerChip(
+        icon = Icons.Filled.Person,
+        label = displayName,
+        contentDescription = "Select profile",
+        enabled = !isSwitchingProfile,
+        isLoading = isSwitchingProfile,
+        onClick = { /* TODO: open profile picker */ },
+    )
+}
+
+@Composable
+private fun ModelSelectorButton(
+    modelCatalogGroups: List<ModelCatalogGroup>,
+    currentModel: String?,
+    currentModelProvider: String?,
+    isLoadingModelCatalog: Boolean,
+    isUpdatingComposerConfiguration: Boolean,
+    onOpenModelPicker: () -> Unit,
+    onSelectModel: (ModelCatalogOption) -> Unit,
+) {
+    val displayName = currentModel ?: "Model"
+    ComposerChip(
+        icon = Icons.Filled.Settings,
+        label = displayName,
+        contentDescription = "Select model",
+        enabled = !isUpdatingComposerConfiguration,
+        isLoading = isLoadingModelCatalog || isUpdatingComposerConfiguration,
+        onClick = onOpenModelPicker,
+    )
+}
+
+@Composable
 private fun PendingAttachmentStrip(
     attachments: List<PendingAttachmentUi>,
     onRemove: (String) -> Unit,
@@ -560,7 +609,7 @@ private fun PendingAttachmentStrip(
                                 },
                                 error = {
                                     Icon(
-                                        imageVector = fileTypeIcon(attachment.mime),
+                                        Icons.Filled.Image,
                                         contentDescription = null,
                                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                         modifier = Modifier.size(24.dp),
@@ -568,139 +617,41 @@ private fun PendingAttachmentStrip(
                                 },
                             )
                         }
-                        Spacer(Modifier.width(8.dp))
                     } else {
                         Icon(
-                            imageVector = fileTypeIcon(attachment.mime),
+                            fileTypeIcon(attachment.mime),
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier
-                                .size(20.dp)
-                                .align(Alignment.CenterVertically),
+                            modifier = Modifier.size(24.dp).padding(8.dp),
                         )
-                        Spacer(Modifier.width(6.dp))
                     }
-                    Column {
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(end = 8.dp),
+                    ) {
                         Text(
-                            text = attachment.name ?: "attachment",
-                            style = MaterialTheme.typography.bodySmall,
+                            text = attachment.name ?: "File",
+                            style = MaterialTheme.typography.labelMedium,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
                         attachment.size?.let { size ->
                             Text(
-                                text = Formatter.formatShortFileSize(context, size),
+                                text = Formatter.formatFileSize(context, size),
                                 style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                             )
                         }
                     }
-                    IconButton(onClick = { onRemove(attachment.id) }) {
-                        Icon(Icons.Filled.Close, contentDescription = "Remove ${attachment.name ?: "attachment"}", modifier = Modifier.size(16.dp))
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun ProfileSelectorButton(
-    profileOptions: List<ProfileSummary>,
-    selectedProfileName: String?,
-    isSwitchingProfile: Boolean,
-    onSelectProfile: (String) -> Unit,
-) {
-    var menuExpanded by remember { mutableStateOf(false) }
-    val selectedLabel = profileOptions.firstOrNull { it.normalizedName == selectedProfileName }?.displayName
-
-    Box {
-        ComposerChip(
-            icon = Icons.Filled.Person,
-            label = selectedLabel,
-            contentDescription = "Profile: ${selectedProfileName ?: "none"}",
-            enabled = profileOptions.isNotEmpty(),
-            isLoading = isSwitchingProfile,
-            onClick = { menuExpanded = true },
-        )
-        DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
-            profileOptions.forEach { profile ->
-                val name = profile.normalizedName ?: return@forEach
-                DropdownMenuItem(
-                    text = { Text(profile.displayName) },
-                    trailingIcon = {
-                        if (name == selectedProfileName) {
-                            Icon(Icons.Filled.Check, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                        }
-                    },
-                    onClick = {
-                        menuExpanded = false
-                        onSelectProfile(name)
-                    },
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun ModelSelectorButton(
-    modelCatalogGroups: List<ModelCatalogGroup>,
-    currentModel: String?,
-    currentModelProvider: String?,
-    isLoadingModelCatalog: Boolean,
-    isUpdatingComposerConfiguration: Boolean,
-    onOpenModelPicker: () -> Unit,
-    onSelectModel: (ModelCatalogOption) -> Unit,
-) {
-    var menuExpanded by remember { mutableStateOf(false) }
-
-    Box {
-        ComposerChip(
-            icon = Icons.Filled.Settings,
-            label = currentModel,
-            contentDescription = "Model: ${currentModel ?: "none"}",
-            isLoading = isUpdatingComposerConfiguration,
-            onClick = {
-                menuExpanded = true
-                onOpenModelPicker()
-            },
-        )
-        DropdownMenu(
-            expanded = menuExpanded,
-            onDismissRequest = { menuExpanded = false },
-            modifier = Modifier.heightIn(max = 400.dp),
-        ) {
-            when {
-                isLoadingModelCatalog && modelCatalogGroups.isEmpty() -> DropdownMenuItem(
-                    text = { Text("Loading models...") },
-                    onClick = {},
-                    enabled = false,
-                )
-                modelCatalogGroups.isEmpty() -> DropdownMenuItem(
-                    text = { Text("No models available") },
-                    onClick = {},
-                    enabled = false,
-                )
-                else -> modelCatalogGroups.forEach { group ->
-                    Text(
-                        text = group.name,
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
-                    )
-                    group.models.forEach { option ->
-                        DropdownMenuItem(
-                            text = { Text(option.displayName) },
-                            trailingIcon = {
-                                if (option.matchesSelection(currentModel, currentModelProvider)) {
-                                    Icon(Icons.Filled.Check, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                                }
-                            },
-                            onClick = {
-                                menuExpanded = false
-                                onSelectModel(option)
-                            },
+                    IconButton(
+                        onClick = { onRemove(attachment.id) },
+                        modifier = Modifier.padding(end = 8.dp),
+                    ) {
+                        Icon(
+                            Icons.Filled.Close,
+                            contentDescription = "Remove attachment",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 }
@@ -709,11 +660,15 @@ private fun ModelSelectorButton(
     }
 }
 
-/** Format elapsed milliseconds as m:ss for voice recording display. */
+/** Formats elapsed milliseconds as MM:SS or HH:MM:SS. */
 private fun formatElapsed(ms: Long): String {
-    val totalSec = ms / 1000
-    val min = totalSec / 60
-    val sec = totalSec % 60
-    return "$min:${sec.toString().padStart(2, '0')}"
+    val totalSeconds = ms / 1000
+    val hours = totalSeconds / 3600
+    val minutes = (totalSeconds % 3600) / 60
+    val seconds = totalSeconds % 60
+    return if (hours > 0) {
+        String.format("%d:%02d:%02d", hours, minutes, seconds)
+    } else {
+        String.format("%02d:%02d", minutes, seconds)
+    }
 }
-
