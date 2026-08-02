@@ -92,9 +92,6 @@ fun ChatScreen(
     modifier: Modifier = Modifier,
     initialComposerDraft: String? = null,
     pendingFileUploadUris: List<String>? = null,
-    // True only in the wide-layout right pane, where the persistent left pane already shows which
-    // session is open -- the top bar's own "Chat" label adds nothing there, so it's dropped rather
-    // than shown redundantly. Back/Files/Refresh stay exactly as they are either way.
     isPaneMode: Boolean = false,
     sessionId: String? = null,
     serverBaseUrl: String? = null,
@@ -114,7 +111,6 @@ fun ChatScreen(
         initialComposerDraft?.let(viewModel::stageDraftIfComposerEmpty)
     }
 
-    // Upload pending shared files sequentially once the view model is ready
     LaunchedEffect(pendingFileUploadUris) {
         val uriStrings = pendingFileUploadUris ?: return@LaunchedEffect
         val uris = uriStrings.mapNotNull { android.net.Uri.parse(it) }
@@ -148,7 +144,6 @@ fun ChatScreen(
         topBar = {
             TopAppBar(
                 title = {
-                    // Centered "Hermes Agent" pill
                     if (!isPaneMode) {
                         Box(
                             modifier = Modifier
@@ -173,7 +168,6 @@ fun ChatScreen(
                     }
                 },
                 navigationIcon = {
-                    // Hamburger menu on left
                     IconButton(onClick = { openDrawer() }) {
                         Icon(Icons.Filled.Menu, contentDescription = "Open menu")
                     }
@@ -306,27 +300,9 @@ fun ChatScreen(
                         (if (uiState.streamingReasoning.isNotEmpty()) 1 else 0) +
                         (if (uiState.isStreaming) 1 else 0)
 
-                    // Whether the transcript should stay pinned to its true bottom as content
-                    // grows. Streaming appends dozens of times a second, so this can't be
-                    // re-derived from scratch on every append (that's what caused the original
-                    // bug: unconditionally snapping back to the bottom fought any manual scroll
-                    // the user made to read up, and -- since scrollToItem only aligns an item's
-                    // *top* edge with the viewport -- also permanently hid the tail of a
-                    // streaming bubble taller than one screen). Instead it's tracked explicitly:
-                    // true on load/new turn, re-evaluated only when a scroll gesture actually
-                    // finishes.
                     var stickToBottom by remember { mutableStateOf(true) }
                     val coroutineScope = rememberCoroutineScope()
 
-                    // Re-evaluate stickiness only after a *real* user drag settles -- not after
-                    // every scroll gesture. The scrollToItem/scrollBy calls below toggle
-                    // `isScrollInProgress` exactly like a user drag does, so watching that alone
-                    // can't tell "the user just scrolled away" from "we just finished our own
-                    // auto-scroll". Misreading the latter as the former was the root cause of a
-                    // reopened session sometimes sticking near the top instead of the newest
-                    // message: our own multi-step scrollToItem-then-scrollBy sequence could get
-                    // read as a finished user scroll partway through, flipping stickToBottom off
-                    // and aborting the rest of the jump to bottom.
                     LaunchedEffect(listState) {
                         var userIsScrolling = false
                         launch {
@@ -344,8 +320,6 @@ fun ChatScreen(
                         }
                     }
 
-                    // A freshly started turn re-pins only if the user is already near the bottom --
-                    // if they'd scrolled away reading history, don't yank them back.
                     LaunchedEffect(uiState.isStreaming) {
                         if (uiState.isStreaming && !listState.canScrollForward) {
                             stickToBottom = true
@@ -356,22 +330,9 @@ fun ChatScreen(
                         HermexLog.d("ChatScroll", "stickToBottom=$stickToBottom")
                     }
 
-                    // Debounced scroll: during active streaming, throttle to ~100ms intervals
-                    // so we don't scroll on every single token (the main cause of jittery video).
-                    // On discrete content changes (new message, new tool call, stickToBottom toggle)
-                    // scroll immediately without delay.
                     LaunchedEffect(totalItems, stickToBottom) {
                         if (totalItems > 0 && stickToBottom) {
                             listState.scrollToItem(totalItems - 1)
-                            // A single scrollBy right after scrollToItem can undershoot the true
-                            // end: on a reopened session with a long markdown message as the last
-                            // item (code blocks, images), its first-pass measured height is smaller
-                            // than what it settles to a frame or two later, so `canScrollForward`
-                            // read immediately afterward under-reports how much further there is to
-                            // go -- observed landing mid-message instead of on its last line. Yield
-                            // a frame before each check/nudge so layout catches up; capped so this
-                            // can't spin forever (streaming has its own debounced effect below and
-                            // isn't expected to hit this loop).
                             var attempts = 0
                             while (attempts < 10) {
                                 withFrameNanos {}
@@ -382,11 +343,6 @@ fun ChatScreen(
                         }
                     }
 
-                    // Last stage of the TTFT trace: fires once streamingText first goes
-                    // non-empty, then waits for the *next* frame callback so the mark reflects
-                    // an actual committed frame rather than just the recomposition being
-                    // scheduled -- Compose's snapshot state write here doesn't by itself mean
-                    // anything has hit the screen yet.
                     LaunchedEffect(uiState.streamingText.isNotEmpty()) {
                         if (uiState.streamingText.isNotEmpty()) {
                             withFrameNanos {}
@@ -394,8 +350,6 @@ fun ChatScreen(
                         }
                     }
 
-                    // During active streaming, debounce the scroll so we don't re-scroll
-                    // on every token. 100ms matches typical token inter-arrival time.
                     var lastScrollMs by remember { mutableLongStateOf(0L) }
                     LaunchedEffect(uiState.streamingText) {
                         if (stickToBottom && uiState.isStreaming) {
@@ -408,10 +362,6 @@ fun ChatScreen(
                         }
                     }
 
-                    // Tool cards don't live in `messages` -- each one is anchored to the message
-                    // index it will precede (see ToolCallUi.anchorMessageCount), so group them here
-                    // and interleave rather than always rendering every tool call after every
-                    // message regardless of which turn it actually happened in.
                     val toolCallsByAnchor = uiState.activeToolCalls.groupBy { it.anchorMessageCount }
 
                     WithRtlSupport(enabled = uiState.rtlChatLayoutEnabled) {
@@ -421,9 +371,6 @@ fun ChatScreen(
                             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 16.dp),
                             verticalArrangement = Arrangement.spacedBy(12.dp),
                         ) {
-                            // Edit/regenerate mutate session history server-side (truncate), so they're
-                            // withheld mid-turn -- racing a truncate against an in-flight send/stream
-                            // would desync local state from the server's.
                             val canMutateHistory = !uiState.isSending && !uiState.isStreaming
                             uiState.messages.forEachIndexed { index, message ->
                                 toolCallsByAnchor[index]?.forEach { toolCall ->
@@ -443,8 +390,6 @@ fun ChatScreen(
                                             onEdit = if (canMutateHistory && message.role == "user") {
                                                 { viewModel.editMessage(index) }
                                             } else null,
-                                            // regenerate() always targets the session's actual last message,
-                                            // so only the last assistant turn can offer it.
                                             onRegenerate = if (canMutateHistory && message.role != "user" && index == uiState.messages.lastIndex) {
                                                 viewModel::regenerate
                                             } else null,
@@ -463,8 +408,6 @@ fun ChatScreen(
                                     ReasoningBlock(uiState.streamingReasoning, initiallyExpanded = uiState.expandThinkingByDefault)
                                 }
                             }
-                            // The current, not-yet-finalized turn's tool calls: anchored at the index
-                            // the eventual finalized reply will occupy, i.e. messages.size right now.
                             toolCallsByAnchor[uiState.messages.size]?.forEach { toolCall ->
                                 item(key = toolCall.stableId) {
                                     ToolCallCard(toolCall, initiallyExpanded = uiState.expandToolCallsByDefault)
@@ -486,8 +429,6 @@ fun ChatScreen(
                         }
                     }
 
-                    // Quick-jump controls -- only shown when there's somewhere to jump to, so they
-                    // don't clutter a transcript that already fits on one screen.
                     val canJumpToTop by remember { derivedStateOf { listState.canScrollBackward } }
                     val canJumpToBottom by remember { derivedStateOf { listState.canScrollForward } }
 
@@ -505,73 +446,22 @@ fun ChatScreen(
                             ChatJumpButton(
                                 icon = Icons.Filled.KeyboardArrowDown,
                                 contentDescription = "Jump to newest message",
-                                onClick = {
-                                    stickToBottom = true
-                                    coroutineScope.launch {
-                                        listState.scrollToItem(totalItems - 1)
-                                        listState.scrollBy(Float.MAX_VALUE)
-                                    }
-                                },
+                                onClick = { coroutineScope.launch { listState.scrollToItem(totalItems - 1) } },
                             )
-                        }
-                    }
-                }
-            }
-
-            uiState.errorMessage?.let { message ->
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(16.dp),
-                    contentAlignment = Alignment.BottomCenter,
-                ) {
-                    Surface(
-                        onClick = { viewModel.dismissError() },
-                        shape = RoundedCornerShape(HermexRadii.Accessory),
-                        color = MaterialTheme.colorScheme.errorContainer,
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.3f)),
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Icon(
-                                Icons.Filled.Warning,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.error,
-                                modifier = Modifier.size(18.dp),
-                            )
-                            Spacer(Modifier.width(8.dp))
-                            Text(
-                                text = message,
-                                color = MaterialTheme.colorScheme.onErrorContainer,
-                                style = MaterialTheme.typography.bodySmall,
-                                modifier = Modifier.weight(1f),
-                            )
-                            Spacer(Modifier.width(4.dp))
-                            IconButton(onClick = { viewModel.dismissError() }, modifier = Modifier.size(24.dp)) {
-                                Icon(
-                                    Icons.Filled.Close,
-                                    "Dismiss",
-                                    tint = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.6f),
-                                    modifier = Modifier.size(18.dp),
-                                )
-                            }
                         }
                     }
                 }
             }
         }
     }
+}
 
-    private fun shareSession(context: Context, sessionId: String, sessionTitle: String) {
-        val uri = HermexNotificationRoutes.session(sessionId)
-        val intent = Intent(Intent.ACTION_SEND).apply {
-            type = "text/plain"
-            putExtra(Intent.EXTRA_TEXT, uri)
-            putExtra(Intent.EXTRA_SUBJECT, sessionTitle)
-        }
-        context.startActivity(Intent.createChooser(intent, "Share Session"))
+private fun shareSession(context: Context, sessionId: String, sessionTitle: String) {
+    val uri = HermexNotificationRoutes.session(sessionId)
+    val intent = Intent(Intent.ACTION_SEND).apply {
+        type = "text/plain"
+        putExtra(Intent.EXTRA_TEXT, uri)
+        putExtra(Intent.EXTRA_SUBJECT, sessionTitle)
     }
-
+    context.startActivity(Intent.createChooser(intent, "Share Session"))
 }
