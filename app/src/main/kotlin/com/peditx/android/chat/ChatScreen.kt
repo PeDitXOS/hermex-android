@@ -1,7 +1,6 @@
 package com.peditx.hermex.chat
 
 import android.content.Context
-import android.content.Intent
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.interaction.DragInteraction
@@ -80,6 +79,7 @@ import com.peditx.hermex.ui.theme.HermexErrorBanner
 import com.peditx.hermex.ui.theme.HermexRadii
 import com.peditx.hermex.chat.WithRtlSupport
 import com.peditx.hermex.chat.MarkdownText
+import com.peditx.hermex.chat.shareSession
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -454,14 +454,4 @@ fun ChatScreen(
             }
         }
     }
-}
-
-private fun shareSession(context: Context, sessionId: String, sessionTitle: String) {
-    val uri = HermexNotificationRoutes.session(sessionId)
-    val intent = Intent(Intent.ACTION_SEND).apply {
-        type = "text/plain"
-        putExtra(Intent.EXTRA_TEXT, uri)
-        putExtra(Intent.EXTRA_SUBJECT, sessionTitle)
-    }
-    context.startActivity(Intent.createChooser(intent, "Share Session"))
 }
