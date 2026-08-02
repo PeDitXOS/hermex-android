@@ -332,9 +332,6 @@ fun ChatComposer(
                                         focusedContainerColor = MaterialTheme.colorScheme.surfaceContainer,
                                         unfocusedBorderColor = Color.Transparent,
                                         focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
-                                        cursorColor = MaterialTheme.colorScheme.primary,
-                                        textColor = MaterialTheme.colorScheme.onSurface,
-                                        placeholderTextColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                                     ),
                                     label = null,
                                 )
