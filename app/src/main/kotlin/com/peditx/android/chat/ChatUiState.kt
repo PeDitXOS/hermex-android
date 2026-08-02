@@ -30,6 +30,8 @@ data class ChatUiState(
     /** Loaded once from [com.peditx.hermex.core.storage.ChatPreferencesStore] -- whether a fresh
      * [ToolCallUi] card should start expanded rather than collapsed. */
     val expandToolCallsByDefault: Boolean = false,
+    /** Loaded once from [com.peditx.hermex.core.storage.ChatPreferencesStore] -- RTL layout for Persian/Arabic/Hebrew. */
+    val rtlChatLayoutEnabled: Boolean = false,
     /** This session's own workspace/model/provider, loaded from [ChatMessage]'s sibling
      * `SessionDetail` when the session loads and kept in sync after every
      * `/api/session/update` -- sent on every `/api/chat/start` so an existing conversation keeps

@@ -37,6 +37,7 @@ import androidx.compose.material.icons.filled.KeyboardVoice
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -290,8 +291,25 @@ fun ChatComposer(
                     }
                 }
 
-                Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+                    // Single-row pill: [+] [Ask Conduit] [🎤] [waveform]
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        // + button
+                        IconButton(onClick = actions.onAttachFile) {
+                            Icon(
+                                Icons.Filled.Add,
+                                contentDescription = "Attach file",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+
+                        // Text field - "Ask Hermes"
                         OutlinedTextField(
                             value = composerState.text,
                             onValueChange = { newValue ->
@@ -304,7 +322,7 @@ fun ChatComposer(
                                 }
                             },
                             modifier = Modifier.weight(1f),
-                            placeholder = { Text(if (composerState.isStreaming) "Steer the response…" else "Message Hermex…") },
+                            placeholder = { Text(if (composerState.isStreaming) "Steer the response…" else "Ask Hermes") },
                             enabled = composerState.isTextFieldEnabled,
                             maxLines = 5,
                             shape = RoundedCornerShape(HermexRadii.Composer),
@@ -315,11 +333,8 @@ fun ChatComposer(
                                 focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
                             ),
                         )
-                        Spacer(Modifier.width(8.dp))
-                        // Fixed-size slot for the trailing action -- Stop/Send (both IconButton-
-                        // family, 48dp by default) and the bare sending spinner previously had no
-                        // shared box, so the control visibly jumped size as the composer moved
-                        // between states.
+
+                        // Stop/Steer button (when streaming) or Send button
                         Box(
                             modifier = Modifier.size(48.dp),
                             contentAlignment = Alignment.Center,
@@ -354,19 +369,8 @@ fun ChatComposer(
                                 }
                             }
                         }
-                    }
-                    Spacer(Modifier.height(8.dp))
-                    // The bottom control strip -- Hermex-styled chips for Attach/Profile/Model,
-                    // each mapping to a real existing action, scrollable so it never clips or wraps
-                    // awkwardly on narrow phones.
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        // Mic button — bottom strip, hold to record
+
+                        // Mic button — hold to record voice note
                         IconButton(
                             onClick = {},
                             modifier = Modifier.combinedClickable(
@@ -393,19 +397,11 @@ fun ChatComposer(
                             ),
                         ) {
                             if (isRecording) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(
-                                        Icons.Filled.Mic,
-                                        contentDescription = "Stop recording",
-                                        tint = MaterialTheme.colorScheme.error,
-                                    )
-                                    Spacer(Modifier.width(4.dp))
-                                    Text(
-                                        text = formatElapsed(voiceRecordingElapsedMs),
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.error,
-                                    )
-                                }
+                                Icon(
+                                    Icons.Filled.Mic,
+                                    contentDescription = "Stop recording",
+                                    tint = MaterialTheme.colorScheme.error,
+                                )
                             } else {
                                 Icon(
                                     Icons.Filled.KeyboardVoice,
@@ -414,26 +410,15 @@ fun ChatComposer(
                                 )
                             }
                         }
-                        AttachFileButton(
-                            enabled = composerState.isAttachButtonEnabled,
-                            isUploading = composerState.isUploadingAttachment,
-                            onAttachFile = actions.onAttachFile,
-                        )
-                        ProfileSelectorButton(
-                            profileOptions = profileSelectorState.profileOptions,
-                            selectedProfileName = profileSelectorState.selectedProfileName,
-                            isSwitchingProfile = composerState.isProfileSelectorLoading,
-                            onSelectProfile = actions.onSelectProfile,
-                        )
-                        ModelSelectorButton(
-                            modelCatalogGroups = modelSelectorState.modelCatalogGroups,
-                            currentModel = modelSelectorState.currentModel,
-                            currentModelProvider = modelSelectorState.currentModelProvider,
-                            isLoadingModelCatalog = modelSelectorState.isLoadingModelCatalog,
-                            isUpdatingComposerConfiguration = composerState.isModelSelectorLoading,
-                            onOpenModelPicker = actions.onOpenModelPicker,
-                            onSelectModel = actions.onSelectModel,
-                        )
+
+                        // Waveform / audio visualization button
+                        IconButton(onClick = { /* TODO: voice input */ }) {
+                            Icon(
+                                Icons.Filled.GraphicEq,
+                                contentDescription = "Voice input",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                     }
                 }
             }

@@ -52,6 +52,7 @@ import com.peditx.hermex.core.network.dto.attachmentsForDisplay
 import com.peditx.hermex.core.network.dto.fileTypeIcon
 import com.peditx.hermex.core.network.dto.stripAttachedFilesMarker
 import com.peditx.hermex.chat.AttachmentFileOpener
+import com.peditx.hermex.chat.MarkdownText
 import com.peditx.hermex.ui.theme.HermexRadii
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -151,10 +152,10 @@ fun MessageBubble(
                     onOpenImage = { showImageViewer = it },
                 )
                 if (!displayContent.isNullOrBlank()) {
-                    Text(
-                        text = displayContent,
+                    MarkdownText(
+                        markdown = displayContent.orEmpty(),
+                        textColor = MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
-                        style = MaterialTheme.typography.bodyMedium,
                     )
                 }
                 // Copy Code button for messages with code blocks
@@ -283,12 +284,12 @@ fun MessageBubble(
 @Composable
 fun StreamingBubble(text: String) {
     if (text.isBlank()) return
-    Text(
-        text = text,
+    MarkdownText(
+        markdown = text,
+        textColor = MaterialTheme.colorScheme.onSurface,
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 4.dp, vertical = 2.dp),
-        style = MaterialTheme.typography.bodyMedium,
     )
 }
 

@@ -33,6 +33,7 @@ import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.RemoveRedEye
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
@@ -77,6 +78,8 @@ import com.peditx.hermex.sessions.MoveToProjectDialog
 import com.peditx.hermex.sessions.RenameSessionDialog
 import com.peditx.hermex.ui.theme.HermexErrorBanner
 import com.peditx.hermex.ui.theme.HermexRadii
+import com.peditx.hermex.chat.WithRtlSupport
+import com.peditx.hermex.chat.MarkdownText
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -145,60 +148,40 @@ fun ChatScreen(
         topBar = {
             TopAppBar(
                 title = {
+                    // Centered "Hermes Agent" pill
                     if (!isPaneMode) {
-                        Text(
-                            "Chat",
-                            fontWeight = FontWeight.Bold,
-                            style = MaterialTheme.typography.titleLarge,
-                        )
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Surface(
+                                shape = RoundedCornerShape(HermexRadii.Accessory),
+                                color = MaterialTheme.colorScheme.primaryContainer,
+                                tonalElevation = 2.dp,
+                            ) {
+                                Text(
+                                    text = "Hermes Agent",
+                                    fontWeight = FontWeight.Medium,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                                )
+                            }
+                        }
                     }
                 },
                 navigationIcon = {
+                    // Hamburger menu on left
                     IconButton(onClick = { openDrawer() }) {
                         Icon(Icons.Filled.Menu, contentDescription = "Open menu")
                     }
                 },
                 actions = {
-                    IconButton(onClick = onOpenWorkspace) {
-                        Icon(Icons.AutoMirrored.Filled.List, contentDescription = "Files")
-                    }
-                    IconButton(onClick = viewModel::loadSession) {
-                        Icon(Icons.Filled.Refresh, contentDescription = "Refresh")
-                    }
-                    Box {
-                        IconButton(onClick = { showSessionMenu = true }) {
-                            Icon(Icons.Filled.MoreVert, contentDescription = "More options")
-                        }
-                        DropdownMenu(expanded = showSessionMenu, onDismissRequest = { showSessionMenu = false }) {
-                            DropdownMenuItem(
-                                text = { Text("Rename") },
-                                onClick = { showSessionMenu = false; showRenameDialog = true },
-                                leadingIcon = { Icon(Icons.Filled.Edit, null) },
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Move to Project") },
-                                onClick = {
-                                    showSessionMenu = false
-                                    showMoveDialog = true
-                                    viewModel.loadProjects()
-                                },
-                                leadingIcon = { Icon(Icons.Filled.Folder, null) },
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Share") },
-                                onClick = {
-                                    showSessionMenu = false
-                                    sessionId?.let { chatShareSession(context, it, sessionTitle ?: "Session", uiState.messages) }
-                                },
-                                leadingIcon = { Icon(Icons.Filled.Share, null) },
-                            )
-                            HorizontalDivider()
-                            DropdownMenuItem(
-                                text = { Text("Delete", color = MaterialTheme.colorScheme.error) },
-                                onClick = { showSessionMenu = false; showDeleteDialog = true },
-                                leadingIcon = { Icon(Icons.Filled.Delete, null, tint = MaterialTheme.colorScheme.error) },
-                            )
-                        }
+                    // Eye icon on right
+                    IconButton(onClick = { /* TODO: toggle theme */ }) {
+                        Icon(Icons.Filled.RemoveRedEye, contentDescription = "Toggle theme")
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -395,72 +378,74 @@ fun ChatScreen(
                     // message regardless of which turn it actually happened in.
                     val toolCallsByAnchor = uiState.activeToolCalls.groupBy { it.anchorMessageCount }
 
-                    LazyColumn(
-                        state = listState,
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 16.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
-                    ) {
-                        // Edit/regenerate mutate session history server-side (truncate), so they're
-                        // withheld mid-turn -- racing a truncate against an in-flight send/stream
-                        // would desync local state from the server's.
-                        val canMutateHistory = !uiState.isSending && !uiState.isStreaming
-                        uiState.messages.forEachIndexed { index, message ->
-                            toolCallsByAnchor[index]?.forEach { toolCall ->
+                    WithRtlSupport(enabled = uiState.rtlChatLayoutEnabled) {
+                        LazyColumn(
+                            state = listState,
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 16.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            // Edit/regenerate mutate session history server-side (truncate), so they're
+                            // withheld mid-turn -- racing a truncate against an in-flight send/stream
+                            // would desync local state from the server's.
+                            val canMutateHistory = !uiState.isSending && !uiState.isStreaming
+                            uiState.messages.forEachIndexed { index, message ->
+                                toolCallsByAnchor[index]?.forEach { toolCall ->
+                                    item(key = toolCall.stableId) {
+                                        ToolCallCard(toolCall, initiallyExpanded = uiState.expandToolCallsByDefault)
+                                    }
+                                }
+                                val historicalToolCall = message.toHistoricalToolCallUi()
+                                item(key = message.stableId) {
+                                    if (historicalToolCall != null) {
+                                        ToolCallCard(historicalToolCall, initiallyExpanded = uiState.expandToolCallsByDefault)
+                                    } else {
+                                        MessageBubble(
+                                            message = message,
+                                            sessionId = sessionId,
+                                            serverBaseUrl = serverBaseUrl,
+                                            onEdit = if (canMutateHistory && message.role == "user") {
+                                                { viewModel.editMessage(index) }
+                                            } else null,
+                                            // regenerate() always targets the session's actual last message,
+                                            // so only the last assistant turn can offer it.
+                                            onRegenerate = if (canMutateHistory && message.role != "user" && index == uiState.messages.lastIndex) {
+                                                viewModel::regenerate
+                                            } else null,
+                                            onFork = if (canMutateHistory) {
+                                                { viewModel.forkFromMessage() }
+                                            } else null,
+                                            onListen = if (message.role == "assistant") {
+                                                { viewModel.toggleListen(index) }
+                                            } else null,
+                                        )
+                                    }
+                                }
+                            }
+                            if (uiState.streamingReasoning.isNotEmpty()) {
+                                item(key = "streaming-reasoning") {
+                                    ReasoningBlock(uiState.streamingReasoning, initiallyExpanded = uiState.expandThinkingByDefault)
+                                }
+                            }
+                            // The current, not-yet-finalized turn's tool calls: anchored at the index
+                            // the eventual finalized reply will occupy, i.e. messages.size right now.
+                            toolCallsByAnchor[uiState.messages.size]?.forEach { toolCall ->
                                 item(key = toolCall.stableId) {
                                     ToolCallCard(toolCall, initiallyExpanded = uiState.expandToolCallsByDefault)
                                 }
                             }
-                            val historicalToolCall = message.toHistoricalToolCallUi()
-                            item(key = message.stableId) {
-                                if (historicalToolCall != null) {
-                                    ToolCallCard(historicalToolCall, initiallyExpanded = uiState.expandToolCallsByDefault)
-                                } else {
-                                    MessageBubble(
-                                        message = message,
-                                        sessionId = sessionId,
-                                        serverBaseUrl = serverBaseUrl,
-                                        onEdit = if (canMutateHistory && message.role == "user") {
-                                            { viewModel.editMessage(index) }
-                                        } else null,
-                                        // regenerate() always targets the session's actual last message,
-                                        // so only the last assistant turn can offer it.
-                                        onRegenerate = if (canMutateHistory && message.role != "user" && index == uiState.messages.lastIndex) {
-                                            viewModel::regenerate
-                                        } else null,
-                                        onFork = if (canMutateHistory) {
-                                            { viewModel.forkFromMessage() }
-                                        } else null,
-                                        onListen = if (message.role == "assistant") {
-                                            { viewModel.toggleListen(index) }
-                                        } else null,
+                            if (uiState.streamingText.isNotEmpty()) {
+                                item(key = "streaming-text") { StreamingBubble(uiState.streamingText) }
+                            }
+                            if (uiState.isStreaming) {
+                                item(key = "streaming-status") {
+                                    Text(
+                                        text = "Generating…",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
                                     )
                                 }
-                            }
-                        }
-                        if (uiState.streamingReasoning.isNotEmpty()) {
-                            item(key = "streaming-reasoning") {
-                                ReasoningBlock(uiState.streamingReasoning, initiallyExpanded = uiState.expandThinkingByDefault)
-                            }
-                        }
-                        // The current, not-yet-finalized turn's tool calls: anchored at the index
-                        // the eventual finalized reply will occupy, i.e. messages.size right now.
-                        toolCallsByAnchor[uiState.messages.size]?.forEach { toolCall ->
-                            item(key = toolCall.stableId) {
-                                ToolCallCard(toolCall, initiallyExpanded = uiState.expandToolCallsByDefault)
-                            }
-                        }
-                        if (uiState.streamingText.isNotEmpty()) {
-                            item(key = "streaming-text") { StreamingBubble(uiState.streamingText) }
-                        }
-                        if (uiState.isStreaming) {
-                            item(key = "streaming-status") {
-                                Text(
-                                    text = "Generating…",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-                                )
                             }
                         }
                     }
@@ -495,171 +480,52 @@ fun ChatScreen(
                         }
                     }
                 }
+            }
 
-                uiState.errorMessage?.let { message ->
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(16.dp),
-                        contentAlignment = Alignment.BottomCenter,
+            uiState.errorMessage?.let { message ->
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(16.dp),
+                    contentAlignment = Alignment.BottomCenter,
+                ) {
+                    Surface(
+                        onClick = { viewModel.dismissError() },
+                        shape = RoundedCornerShape(HermexRadii.Accessory),
+                        color = MaterialTheme.colorScheme.errorContainer,
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.3f)),
                     ) {
-                        Surface(
-                            onClick = { viewModel.dismissError() },
-                            shape = RoundedCornerShape(HermexRadii.Accessory),
-                            color = MaterialTheme.colorScheme.errorContainer,
-                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.3f)),
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
+                            Icon(
+                                Icons.Filled.Warning,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.size(18.dp),
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                text = message,
+                                color = MaterialTheme.colorScheme.onErrorContainer,
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.weight(1f),
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            IconButton(onClick = { viewModel.dismissError() }, modifier = Modifier.size(24.dp)) {
                                 Icon(
-                                    Icons.Filled.Warning,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.error,
+                                    Icons.Filled.Close,
+                                    "Dismiss",
+                                    tint = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.6f),
                                     modifier = Modifier.size(18.dp),
                                 )
-                                Spacer(Modifier.width(8.dp))
-                                Text(
-                                    text = message,
-                                    color = MaterialTheme.colorScheme.onErrorContainer,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    modifier = Modifier.weight(1f),
-                                )
-                                Spacer(Modifier.width(4.dp))
-                                IconButton(onClick = { viewModel.dismissError() }, modifier = Modifier.size(24.dp)) {
-                                    Icon(
-                                        Icons.Filled.Close,
-                                        "Dismiss",
-                                        tint = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.6f),
-                                        modifier = Modifier.size(18.dp),
-                                    )
-                                }
-                                TextButton(
-                                    onClick = { viewModel.sendMessage() },
-                                    modifier = Modifier.height(24.dp),
-                                    contentPadding = PaddingValues(horizontal = 6.dp),
-                                ) {
-                                    Text("Retry", style = MaterialTheme.typography.labelSmall)
-                                }
                             }
                         }
-                    }
-                }
-
-                // Reattach banner (disconnected stream)
-                if (uiState.hasDisconnectedStream && !uiState.isStreaming) {
-                    Box(
-                        Modifier.fillMaxSize().padding(16.dp),
-                        contentAlignment = Alignment.BottomCenter,
-                    ) {
-                        HermexErrorBanner(
-                            message = "Response interrupted — reconnect to resume streaming",
-                            onRetry = { viewModel.reattachStream() },
-                        )
                     }
                 }
             }
         }
     }
-
-    uiState.pendingApproval?.let { pending ->
-        ApprovalRequestOverlay(
-            pending = pending,
-            isResponding = uiState.isRespondingToApproval,
-            errorMessage = uiState.approvalErrorMessage,
-            onChoice = { choice -> viewModel.respondToApproval(choice) },
-            onSkipAll = { viewModel.skipAllApprovals() },
-        )
-    }
-
-    uiState.pendingClarification?.let { pending ->
-        ClarificationRequestOverlay(
-            pending = pending,
-            isResponding = uiState.isRespondingToClarification,
-            errorMessage = uiState.clarificationErrorMessage,
-            onSubmit = { response -> viewModel.respondToClarification(response) },
-        )
-    }
-
-    if (showRenameDialog) {
-        RenameSessionDialog(
-            currentName = sessionTitle ?: "",
-            onConfirm = { newTitle ->
-                onRenameSession?.invoke(newTitle)
-                showRenameDialog = false
-            },
-            onDismiss = { showRenameDialog = false },
-        )
-    }
-    if (showDeleteDialog) {
-        DeleteSessionDialog(
-            sessionTitle = sessionTitle ?: "this session",
-            onConfirm = {
-                onDeleteSession?.invoke()
-                showDeleteDialog = false
-            },
-            onDismiss = { showDeleteDialog = false },
-        )
-    }
-    if (showMoveDialog) {
-        MoveToProjectDialog(
-            projects = uiState.projects,
-            currentProjectId = uiState.currentProjectId,
-            onConfirm = { projectId ->
-                viewModel.moveSessionToProject(projectId)
-                showMoveDialog = false
-            },
-            onDismiss = { showMoveDialog = false },
-            isLoadingProjects = uiState.isLoadingProjects,
-            projectsErrorMessage = uiState.projectsErrorMessage,
-        )
-    }
-    } // end outer Box
-}
-
-private fun chatShareSession(context: Context, sessionId: String, sessionTitle: String, messages: List<com.peditx.hermex.core.network.dto.ChatMessage>) {
-    if (messages.isNotEmpty()) {
-        // Export full conversation as markdown
-        val file = SessionExporter.exportToMarkdown(context, sessionTitle, messages)
-        SessionExporter.shareFile(context, file)
-    } else {
-        // Fallback: share deep link
-        val uri = HermexNotificationRoutes.session(sessionId)
-        val intent = Intent(Intent.ACTION_SEND).apply {
-            type = "text/plain"
-            putExtra(Intent.EXTRA_TEXT, uri)
-            putExtra(Intent.EXTRA_SUBJECT, sessionTitle)
-        }
-        context.startActivity(Intent.createChooser(intent, "Share Session"))
-    }
-}
-
-/** A small floating circular button for the transcript's jump-to-top/jump-to-bottom controls --
- * styled like [ToolCallCard]'s surface (bordered `surfaceContainerHighest`, primary-tinted icon)
- * rather than a stock `FloatingActionButton`, so it reads as part of the same card language
- * instead of introducing a new visual element. */
-@Composable
-private fun ChatJumpButton(
-    icon: ImageVector,
-    contentDescription: String,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Surface(
-        onClick = onClick,
-        modifier = modifier.size(40.dp),
-        shape = CircleShape,
-        color = MaterialTheme.colorScheme.surfaceContainerHighest,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
-        shadowElevation = 2.dp,
-    ) {
-        Box(contentAlignment = Alignment.Center) {
-            Icon(
-                imageVector = icon,
-                contentDescription = contentDescription,
-                tint = MaterialTheme.colorScheme.primary,
-            )
-        }
     }
 }

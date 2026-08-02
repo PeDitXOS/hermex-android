@@ -119,6 +119,8 @@ class ChatViewModel(
             _uiState.update { it.copy(expandThinkingByDefault = expandThinkingByDefault) }
             val expandToolCallsByDefault = chatPreferencesStore.loadExpandToolCallsByDefault()
             _uiState.update { it.copy(expandToolCallsByDefault = expandToolCallsByDefault) }
+            val rtlChatLayoutEnabled = chatPreferencesStore.loadRtlChatLayoutEnabled()
+            _uiState.update { it.copy(rtlChatLayoutEnabled = rtlChatLayoutEnabled) }
         }
         viewModelScope.launch {
             var previousServerId: String? = null
