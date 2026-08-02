@@ -347,9 +347,9 @@ fun ChatComposer(
                                     }
                                 }
                                 val icon = actionButton.first
-                                val contentDesc = actionButton.second
-                                val containerColor = actionButton.third.first
-                                val contentColor = actionButton.third.second
+                                val contentDesc = actionButton.second.first
+                                val containerColor = actionButton.second.second.first
+                                val contentColor = actionButton.second.second.second
 
                                 Box(
                                     modifier = Modifier
