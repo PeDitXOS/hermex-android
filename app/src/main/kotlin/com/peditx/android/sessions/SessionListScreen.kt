@@ -275,7 +275,7 @@ fun SessionListScreen(
  * adaptive two-pane shell lands. Nav items now live in the slide-out drawer owned by
  * [SessionListScreen].
  */
-@OptIn(ExperimentalFoundationApi::class)
+@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun SessionListBody(
     viewModel: SessionListViewModel,
