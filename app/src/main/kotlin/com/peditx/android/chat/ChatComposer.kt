@@ -1,7 +1,5 @@
 package com.peditx.hermex.chat
 
-import android.net.Uri
-import android.text.format.Formatter
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -33,11 +31,11 @@ import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.KeyboardVoice
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -87,6 +85,7 @@ import com.peditx.hermex.core.network.dto.fileTypeIcon
 import com.peditx.hermex.core.util.HermexLog
 import com.peditx.hermex.ui.theme.HermexRadii
 import java.io.File
+import android.net.Uri
 
 /** [ChatComposer]'s callbacks, grouped so adding a future action (slash commands) doesn't widen
  * [ChatComposer]'s own parameter list. */
@@ -202,6 +201,9 @@ fun ChatComposer(
                 )
             }
         }
+    // File picker launcher for attach button
+    val filePickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        uri?.let(actions.onAttachFile)
     }
     // Clean up SpeechRecognizer on dispose
     DisposableEffect(Unit) {
@@ -301,7 +303,7 @@ fun ChatComposer(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         // + button
-                        IconButton(onClick = actions.onAttachFile) {
+                        IconButton(onClick = { filePickerLauncher.launch(arrayOf("*/*")) }) {
                             Icon(
                                 Icons.Filled.Add,
                                 contentDescription = "Attach file",
