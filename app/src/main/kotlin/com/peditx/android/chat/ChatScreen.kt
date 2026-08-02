@@ -80,7 +80,6 @@ import com.peditx.hermex.ui.theme.HermexErrorBanner
 import com.peditx.hermex.ui.theme.HermexRadii
 import com.peditx.hermex.chat.WithRtlSupport
 import com.peditx.hermex.chat.MarkdownText
-import com.peditx.hermex.chat.chatShareSession
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -209,7 +208,7 @@ fun ChatScreen(
                                 text = { Text("Share") },
                                 onClick = {
                                     showSessionMenu = false
-                                    sessionId?.let { chatShareSession(context, it, sessionTitle ?: "Session", uiState.messages) }
+                                    sessionId?.let { shareSession(context, it, sessionTitle ?: "Session") }
                                 },
                                 leadingIcon = { Icon(Icons.Filled.Share, null) },
                             )
@@ -564,5 +563,15 @@ fun ChatScreen(
             }
         }
     }
+
+    private fun shareSession(context: Context, sessionId: String, sessionTitle: String) {
+        val uri = HermexNotificationRoutes.session(sessionId)
+        val intent = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_TEXT, uri)
+            putExtra(Intent.EXTRA_SUBJECT, sessionTitle)
+        }
+        context.startActivity(Intent.createChooser(intent, "Share Session"))
     }
+
 }
