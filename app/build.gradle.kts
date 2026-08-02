@@ -15,8 +15,8 @@ android {
         applicationId = "com.hermex.android"
         minSdk = 26
         targetSdk = 36
-        versionCode = System.getenv("VERSION_CODE")?.toIntOrNull() ?: 33
-        versionName = "1.0.1"
+        versionCode = System.getenv("VERSION_CODE")?.toIntOrNull() ?: 34
+        versionName = "1.0.2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

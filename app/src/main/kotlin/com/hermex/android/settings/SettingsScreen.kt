@@ -1,5 +1,7 @@
 package com.hermex.android.settings
 
+import com.hermex.android.GITHUB_REPO_URL
+import com.hermex.android.PRIVACY_POLICY_URL
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
