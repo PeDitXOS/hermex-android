@@ -51,6 +51,13 @@ jobs:
       - name: Grant Gradle Permission
         run: chmod +x gradlew
 
+      - name: Verify ChatScreen.kt
+        run: |
+          echo "=== ChatScreen.kt tail ==="
+          tail -20 app/src/main/kotlin/com/peditx/android/chat/ChatScreen.kt
+          echo "=== Checking shareSession location ==="
+          grep -n "shareSession" app/src/main/kotlin/com/peditx/android/chat/ChatScreen.kt
+
       - name: Build Debug APK
         run: ./gradlew assembleDebug --no-daemon --no-build-cache --no-configuration-cache
         env:
