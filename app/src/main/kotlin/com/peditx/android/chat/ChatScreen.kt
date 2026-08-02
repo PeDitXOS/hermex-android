@@ -80,6 +80,7 @@ import com.peditx.hermex.ui.theme.HermexErrorBanner
 import com.peditx.hermex.ui.theme.HermexRadii
 import com.peditx.hermex.chat.WithRtlSupport
 import com.peditx.hermex.chat.MarkdownText
+import com.peditx.hermex.chat.chatShareSession
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -243,20 +244,17 @@ fun ChatScreen(
                 attachmentState = ChatComposerAttachmentState.from(uiState),
                 actions = ChatComposerActions(
                     onTextChanged = viewModel::onComposerTextChanged,
-                    // TtftTracer.start() lives inside ChatViewModel.sendMessage() itself (not
-                    actions = ChatComposerActions(
-                                        onTextChanged = viewModel::onComposerTextChanged,
-                                        onSend = viewModel::sendMessage,
-                                        onSteer = viewModel::steerMessage,
-                                        onStop = viewModel::cancelStream,
-                                        onSelectProfile = viewModel::selectProfile,
-                                        onOpenModelPicker = viewModel::refreshModelCatalogForPickerOpen,
-                                        onSelectModel = viewModel::selectComposerModel,
-                                        onAttachFile = viewModel::uploadAttachment,
-                                        onRemoveAttachment = viewModel::removePendingAttachment,
-                                        onSendVoiceNote = viewModel::sendVoiceNote,
-                                        onRefresh = viewModel::loadSession,
-                                    ),
+                    onSend = viewModel::sendMessage,
+                    onSteer = viewModel::steerMessage,
+                    onStop = viewModel::cancelStream,
+                    onSelectProfile = viewModel::selectProfile,
+                    onOpenModelPicker = viewModel::refreshModelCatalogForPickerOpen,
+                    onSelectModel = viewModel::selectComposerModel,
+                    onAttachFile = viewModel::uploadAttachment,
+                    onRemoveAttachment = viewModel::removePendingAttachment,
+                    onSendVoiceNote = viewModel::sendVoiceNote,
+                    onRefresh = viewModel::loadSession,
+                ),
             )
         },
     ) { innerPadding ->
