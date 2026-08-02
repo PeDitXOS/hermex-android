@@ -51,6 +51,14 @@ jobs:
       - name: Grant Gradle Permission
         run: chmod +x gradlew
 
+      - name: Clean Gradle completely
+        run: |
+          ./gradlew clean --no-daemon || true
+          rm -rf ~/.gradle/caches
+          rm -rf .gradle
+          rm -rf app/build
+          rm -rf build
+
       - name: Verify ChatScreen.kt
         run: |
           echo "=== ChatScreen.kt tail ==="
