@@ -193,6 +193,10 @@ fun ChatComposer(
     val recordingScope = rememberCoroutineScope()
     val haptic = LocalHapticFeedback.current
 
+    fun performHaptic() {
+        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+    }
+
     fun startRecording() {
         isRecording = true
         recordingDuration = 0
@@ -344,16 +348,15 @@ fun ChatComposer(
                                 }
                                 val icon = actionButton.first
                                 val contentDesc = actionButton.second
-                                val colors = actionButton.third
-                                val containerColor = colors.first
-                                val contentColor = colors.second
+                                val containerColor = actionButton.third.first
+                                val contentColor = actionButton.third.second
 
                                 Box(
                                     modifier = Modifier
                                         .size(48.dp)
                                         .combinedClickable(
                                             onClick = {
-                                                haptic.performHapticFeedback(HapticFeedbackType.LightTouch)
+                                                performHaptic()
                                                 when {
                                                     composerState.showStopButton -> actions.onStop()
                                                     composerState.isStreaming -> {
@@ -370,7 +373,7 @@ fun ChatComposer(
                                                         context, Manifest.permission.RECORD_AUDIO
                                                     ) == PackageManager.PERMISSION_GRANTED
                                                     if (hasPermission) {
-                                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                        performHaptic()
                                                         startRecording()
                                                     } else {
                                                         permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
