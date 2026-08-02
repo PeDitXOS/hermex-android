@@ -439,7 +439,32 @@ fun ChatComposer(
                                 }
                             }
                         }
+                        }
                     }
+                }
+
+                // Control strip: Profile | Model
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, bottom = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    ProfileSelectorButton(
+                        profileOptions = profileSelectorState.profileOptions,
+                        selectedProfileName = profileSelectorState.selectedProfileName,
+                        isSwitchingProfile = composerState.isSwitchingProfile,
+                        onSelectProfile = { /* TODO: open profile picker */ },
+                    )
+                    ModelSelectorButton(
+                        modelCatalogGroups = modelSelectorState.modelCatalogGroups,
+                        currentModel = modelSelectorState.currentModel,
+                        currentModelProvider = modelSelectorState.currentModelProvider,
+                        isLoadingModelCatalog = modelSelectorState.isLoadingModelCatalog,
+                        isUpdatingComposerConfiguration = composerState.isUpdatingComposerConfiguration,
+                        onOpenModelPicker = actions.onOpenModelPicker,
+                        onSelectModel = actions.onSelectModel,
+                    )
                 }
             }
         }
