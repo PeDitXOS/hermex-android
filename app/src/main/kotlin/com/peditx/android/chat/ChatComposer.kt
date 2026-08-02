@@ -335,7 +335,7 @@ fun ChatComposer(
                                 )
 
                                 // Single action button: Send / Steer / Stop
-                                val actionButton: Pair<ImageVector, Pair<String, Pair<Color, Color>>> = when {
+                                val actionButton: Pair<Pair<Pair<ImageVector, String>, Color>, Color> = when {
                                     composerState.showStopButton -> {
                                         Icons.Filled.Close to "Stop" to MaterialTheme.colorScheme.errorContainer to MaterialTheme.colorScheme.onErrorContainer
                                     }
@@ -346,10 +346,10 @@ fun ChatComposer(
                                         Icons.AutoMirrored.Filled.Send to "Send" to MaterialTheme.colorScheme.primaryContainer to MaterialTheme.colorScheme.onPrimaryContainer
                                     }
                                 }
-                                val icon = actionButton.first
-                                val contentDesc = actionButton.second.first
-                                val containerColor = actionButton.second.second.first
-                                val contentColor = actionButton.second.second.second
+                                val icon = actionButton.first.first.first
+                                val contentDesc = actionButton.first.first.second
+                                val containerColor = actionButton.first.second
+                                val contentColor = actionButton.second
 
                                 Box(
                                     modifier = Modifier
