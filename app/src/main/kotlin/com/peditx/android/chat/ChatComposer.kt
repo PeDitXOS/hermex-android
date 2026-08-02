@@ -275,37 +275,32 @@ fun ChatComposer(
 
                 // Main input row: [+] [TextField with action button]
                 Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        // + button (inside the text field area, far left)
-                        IconButton(onClick = { filePickerLauncher.launch(arrayOf("*/*")) }) {
-                            Icon(
-                                Icons.Filled.Add,
-                                contentDescription = "Attach file",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    // Text field with integrated + button and action button
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp)
+                            .background(
+                                color = MaterialTheme.colorScheme.surfaceContainer,
+                                shape = RoundedCornerShape(HermexRadii.Composer)
                             )
-                        }
-
-                        // Text field with integrated action button
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(48.dp)
-                                .background(
-                                    color = MaterialTheme.colorScheme.surfaceContainer,
-                                    shape = RoundedCornerShape(HermexRadii.Composer)
-                                )
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxSize(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
                         ) {
-                            Row(
-                                modifier = Modifier.fillMaxSize(),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                            ) {
-                                // Text field
-                                OutlinedTextField(
+                            // + button (inside the text field area, far left)
+                            IconButton(onClick = { filePickerLauncher.launch(arrayOf("*/*")) }) {
+                                Icon(
+                                    Icons.Filled.Add,
+                                    contentDescription = "Attach file",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+
+                            // Text field
+                            OutlinedTextField(
                                     value = composerState.text,
                                     onValueChange = { newValue ->
                                         actions.onTextChanged(newValue)
@@ -438,9 +433,8 @@ fun ChatComposer(
                                     }
                                 }
                             }
+                            }
                         }
-                    }
-                }
 
                 // Control strip: Profile | Model
                 Row(
