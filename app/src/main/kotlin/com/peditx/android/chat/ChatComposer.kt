@@ -8,13 +8,10 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.combinedClickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -27,7 +24,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
@@ -44,7 +40,6 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilledIconButton
-import androidx.compose.material3.FilledIconButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -161,7 +156,7 @@ data class ChatComposerAttachmentState(
 private val ComposerMaxWidth = 840.dp
 
 /**
- * Single-row composer: [+] [Text Field with Send/Steer/Voice] 
+ * Single-row composer: [+] [Text Field with Send/Steer/Voice]
  * - + button on far left (inside text field area)
  * - Text field in middle with "Ask Hermes" placeholder
  * - Single action button on right that changes: Send → Steer (streaming) → Voice (hold)
@@ -199,41 +194,8 @@ fun ChatComposer(
     val recordingScope = rememberCoroutineScope()
     val haptic = LocalHapticFeedback.current
 
-    // Combined clickable for the action button - handles tap (send/steer) and long press (voice)
-    val actionInteractionSource = remember { MutableInteractionSource() }
-    val actionCombinedClickable = combinedClickable(
-        onClick = {
-            haptic.performHapticFeedback(HapticFeedbackType.LightTouch)
-            when {
-                composerState.showStopButton -> actions.onStop()
-                composerState.isStreaming -> {
-                    if (composerState.canSend) actions.onSteer()
-                }
-                else -> {
-                    if (composerState.canSend) actions.onSend()
-                }
-            }
-        },
-        onLongPress = {
-            // Voice recording - only when not streaming and not showing stop
-            if (!composerState.isStreaming && !composerState.showStopButton) {
-                val hasPermission = ContextCompat.checkSelfPermission(
-                    context, Manifest.permission.RECORD_AUDIO
-                ) == PackageManager.PERMISSION_GRANTED
-                if (hasPermission) {
-                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                    startRecording()
-                } else {
-                    permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-                }
-            }
-        },
-        onLongPressRelease = {
-            if (isRecording) {
-                stopRecording()
-            }
-        },
-    )
+    // Long press detector for voice recording
+    val longPressTimeout = 500L
 
     fun startRecording() {
         isRecording = true
@@ -363,11 +325,11 @@ fun ChatComposer(
                                     enabled = composerState.isTextFieldEnabled,
                                     maxLines = 5,
                                     singleLine = false,
-                                    keyboardOptions = androidx.compose.ui.text.input.KeyboardOptions(
-                                        imeAction = androidx.compose.ui.text.input.ImeAction.Send,
-                                        keyboardType = androidx.compose.ui.text.input.KeyboardType.Text
+                                    keyboardOptions = KeyboardOptions(
+                                        imeAction = ImeAction.Send,
+                                        keyboardType = KeyboardType.Text
                                     ),
-                                    keyboardActions = androidx.compose.ui.text.input.KeyboardActions(
+                                    keyboardActions = KeyboardActions(
                                         onDone = {
                                             if (composerState.canSend && !composerState.isStreaming && !composerState.showStopButton) {
                                                 actions.onSend()
@@ -387,14 +349,58 @@ fun ChatComposer(
                                     label = null,
                                 )
 
-                                // Single action button: Send / Steer / Voice
+                                // Single action button: Send / Steer / Stop
+                                val (icon, contentDesc, containerColor, contentColor) = when {
+                                    composerState.showStopButton -> {
+                                        Icons.Filled.Close to "Stop" to MaterialTheme.colorScheme.errorContainer to MaterialTheme.colorScheme.onErrorContainer
+                                    }
+                                    composerState.isStreaming -> {
+                                        Icons.AutoMirrored.Filled.Send to "Steer" to MaterialTheme.colorScheme.primaryContainer to MaterialTheme.colorScheme.onPrimaryContainer
+                                    }
+                                    else -> {
+                                        Icons.AutoMirrored.Filled.Send to "Send" to MaterialTheme.colorScheme.primaryContainer to MaterialTheme.colorScheme.onPrimaryContainer
+                                    }
+                                }
+
                                 Box(
                                     modifier = Modifier
                                         .size(40.dp)
-                                        .combinedClickable(actionCombinedClickable)
+                                        .combinedClickable(
+                                            onClick = {
+                                                haptic.performHapticFeedback(HapticFeedbackType.LightTouch)
+                                                when {
+                                                    composerState.showStopButton -> actions.onStop()
+                                                    composerState.isStreaming -> {
+                                                        if (composerState.canSend) actions.onSteer()
+                                                    }
+                                                    else -> {
+                                                        if (composerState.canSend) actions.onSend()
+                                                    }
+                                                }
+                                            },
+                                            onLongPress = {
+                                                if (!composerState.isStreaming && !composerState.showStopButton) {
+                                                    val hasPermission = ContextCompat.checkSelfPermission(
+                                                        context, Manifest.permission.RECORD_AUDIO
+                                                    ) == PackageManager.PERMISSION_GRANTED
+                                                    if (hasPermission) {
+                                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                        startRecording()
+                                                    } else {
+                                                        permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                                                    }
+                                                }
+                                            },
+                                            onLongPressRelease = {
+                                                if (isRecording) {
+                                                    stopRecording()
+                                                }
+                                            }
+                                        )
                                         .padding(end = 4.dp),
                                     contentAlignment = Alignment.Center,
                                 ) {
+                                    // Recording indicator overlay
                                     if (isRecording) {
                                         Box(
                                             modifier = Modifier
@@ -423,29 +429,13 @@ fun ChatComposer(
                                             }
                                         }
                                     } else {
-                                        // Normal action button
-                                        val actionButton = when {
-                                            composerState.showStopButton -> {
-                                                Icons.Filled.Close to "Stop" to MaterialTheme.colorScheme.errorContainer to MaterialTheme.colorScheme.onErrorContainer
-                                            }
-                                            composerState.isStreaming -> {
-                                                Icons.AutoMirrored.Filled.Send to "Steer" to MaterialTheme.colorScheme.primaryContainer to MaterialTheme.colorScheme.onPrimaryContainer
-                                            }
-                                            else -> {
-                                                Icons.AutoMirrored.Filled.Send to "Send" to MaterialTheme.colorScheme.primaryContainer to MaterialTheme.colorScheme.onPrimaryContainer
-                                            }
-                                        }
-                                        val icon = actionButton.first
-                                        val contentDesc = actionButton.second
-                                        val buttonColor = actionButton.third.first
-                                        val contentColor = actionButton.third.second
                                         FilledIconButton(
                                             onClick = {
                                                 // Click handled by combinedClickable
                                             },
                                             enabled = composerState.canSend || composerState.showStopButton,
-                                            colors = FilledIconButtonDefaults.filledIconButtonColors(
-                                                containerColor = buttonColor,
+                                            colors = androidx.compose.material3.FilledIconButtonDefaults.filledIconButtonColors(
+                                                containerColor = containerColor,
                                                 contentColor = contentColor,
                                                 disabledContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
                                                 disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
