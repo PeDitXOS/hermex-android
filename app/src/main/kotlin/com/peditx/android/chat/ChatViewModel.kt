@@ -1537,6 +1537,15 @@ class ChatViewModel(
         }
     }
 
+    /** Steer using current composer text (for Send/Steer button during streaming). */
+    fun steerMessage() {
+        val text = _uiState.value.composerText.trim()
+        if (text.isNotEmpty()) {
+            steer(text)
+            _uiState.update { it.copy(composerText = "") }
+        }
+    }
+
     /** Fork the current conversation from the last message, creating a new session.
      *  POST /api/chat/branch with { session_id }. */
     fun forkFromMessage() {

@@ -33,11 +33,11 @@ import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.KeyboardVoice
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -94,6 +94,7 @@ import java.io.File
 data class ChatComposerActions(
     val onTextChanged: (String) -> Unit,
     val onSend: () -> Unit,
+    val onSteer: () -> Unit,
     val onStop: () -> Unit,
     val onSelectProfile: (String) -> Unit,
     val onOpenModelPicker: () -> Unit,
@@ -101,6 +102,7 @@ data class ChatComposerActions(
     val onAttachFile: (Uri) -> Unit,
     val onRemoveAttachment: (String) -> Unit,
     val onSendVoiceNote: (File, String) -> Unit,
+    val onRefresh: () -> Unit,
 )
 
 /** The profile dropdown's own list/selection data -- separate from [ChatComposerState] because
@@ -169,272 +171,182 @@ fun ChatComposer(
     modifier: Modifier = Modifier,
 ) {
     // enableEdgeToEdge() (MainActivity) draws the app behind the system navigation bar. The dock's
-    // tonal background is allowed to extend all the way to the physical bottom edge (behind
-    // gesture nav), matching a real bottom dock -- only the interactive content inside is padded
-    // clear of the nav bar via navigationBarsPadding() on the inner Column, not the outer Surface.
-    // Deliberately NOT also adding imePadding(): Scaffold's own default contentWindowInsets
-    // (WindowInsets.safeDrawing, which includes ime) already accounts for the keyboard once, so
-    // stacking an explicit imePadding() on top double-counted the keyboard height and left a large
-    // blank gap above it when the keyboard opened.
-    // Logged only on change, not every recomposition -- lets `adb logcat -s Hermex/Composer`
-    // confirm Scaffold's innerPadding is actually reserving this much space for the transcript
-    // (see ChatScreen investigation notes on composer/content overlap).
-    val context = LocalContext.current
-    var lastLoggedHeightPx by remember { mutableStateOf(-1) }
-    var showCommandPicker by remember { mutableStateOf(false) }
-    var commandQuery by remember { mutableStateOf("") }
-    var isRecording by remember { mutableStateOf(false) }
-    val voiceHandler = remember { VoiceInputHandler(context) }
-    val voiceRecorder = remember { VoiceNoteRecorder(context.cacheDir) }
-    var voiceRecordingElapsedMs by remember { mutableStateOf(0L) }
-    val snackbarHostState = remember { SnackbarHostState() }
-    val coroutineScope = rememberCoroutineScope()
-    val recordAudioPermission = android.Manifest.permission.RECORD_AUDIO
+        // tonal background is allowed to extend all the way to the physical bottom edge (behind
+        // gesture nav), matching a real bottom dock -- only the interactive content inside is padded
+        // clear of the nav bar via navigationBarsPadding() on the inner Column, not the outer Surface.
+        // Deliberately NOT also adding imePadding(): Scaffold's own default contentWindowInsets
+        // (WindowInsets.safeDrawing, which includes ime) already accounts for the keyboard once, so
+        // stacking an explicit imePadding() on top double-counted the keyboard height and left a large
+        // blank gap above it when the keyboard opened.
+        // Logged only on change, not every recomposition -- lets `adb logcat -s Hermex/Composer`
+        // confirm Scaffold's innerPadding is actually reserving this much space for the transcript
+        // (see ChatScreen investigation notes on composer/content overlap).
+        val context = LocalContext.current
+        var lastLoggedHeightPx by remember { mutableStateOf(-1) }
+        var showCommandPicker by remember { mutableStateOf(false) }
+        var commandQuery by remember { mutableStateOf("") }
 
-    // Permission launcher for microphone
-    val permissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission(),
-    ) { granted ->
-        if (granted) {
-            voiceRecorder.begin(coroutineScope)
-            isRecording = true
-        } else {
-            coroutineScope.launch {
-                snackbarHostState.showSnackbar(
-                    "Microphone permission is required for voice input. Please enable it in Settings.",
-                )
-            }
+        // File picker launcher for attach button
+        val filePickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+            uri?.let(actions.onAttachFile)
         }
-    }
 
-    // File picker launcher for attach button
-    val filePickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        uri?.let(actions.onAttachFile)
-    }
-
-    // Clean up SpeechRecognizer on dispose
-    DisposableEffect(Unit) {
-        onDispose {
-            voiceHandler.stopListening()
-            voiceRecorder.cancel()
-        }
-    }
-
-    // Track recording elapsed time for UI display
-    LaunchedEffect(isRecording) {
-        if (isRecording) {
-            while (isActive) {
-                voiceRecordingElapsedMs = voiceRecorder.elapsedMs
-                if (!voiceRecorder.isRecording) {
-                    // Auto-stopped (max duration or error)
-                    isRecording = false
-                    val note = voiceRecorder.finish()
-                    if (note != null) actions.onSendVoiceNote(note.file, note.filename)
-                    break
-                }
-                delay(200)
-            }
-        } else {
-            voiceRecordingElapsedMs = 0L
-        }
-    }
-
-    // Capped and centered rather than left plain fillMaxWidth(), so the dock doesn't stretch to an
-    // awkward, hard-to-type-in width on a large tablet's wide-layout right pane. On any phone-scale
-    // width (compact or the adaptive shell's ~400dp right pane) the cap never binds, so this Box is
-    // a no-op there -- outer width stays fillMaxWidth() exactly as before, just with the (possibly
-    // narrower) dock centered inside it.
-    // Deliberately no fillMaxWidth() before widthIn(max=...) below: fillMaxWidth() pins both min
-    // and max width to the full available space, so a subsequent widthIn(max) below that pinned
-    // min gets silently overridden back up to full width, defeating the cap on wide panes.
-    Box(modifier = modifier.fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
-        SnackbarHost(hostState = snackbarHostState)
-        Surface(
-            modifier = Modifier
-                .widthIn(max = ComposerMaxWidth)
-                .onGloballyPositioned { coordinates ->
-                    val heightPx = coordinates.size.height
-                    if (heightPx != lastLoggedHeightPx) {
-                        lastLoggedHeightPx = heightPx
-                        HermexLog.d("Composer", "measured height=${heightPx}px")
-                    }
-                },
-            color = MaterialTheme.colorScheme.surfaceContainerHigh,
-            shape = RoundedCornerShape(topStart = HermexRadii.SettingsCard, topEnd = HermexRadii.SettingsCard),
-            tonalElevation = 4.dp,
-        ) {
-            Column(modifier = Modifier.navigationBarsPadding()) {
-                // Hairline separating the dock from the message list above -- the app-wide
-                // substitute for wrapping the whole (now asymmetrically-rounded) shape in a border.
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f), thickness = 1.dp)
-
-                if (attachmentState.pendingAttachments.isNotEmpty()) {
-                    PendingAttachmentStrip(
-                        attachments = attachmentState.pendingAttachments,
-                        onRemove = actions.onRemoveAttachment,
-                    )
-                }
-
-                if (showCommandPicker) {
-                    val suggestions = CommandRegistry.filter(commandQuery)
-                    if (suggestions.isNotEmpty()) {
-                        Surface(
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(HermexRadii.Accessory),
-                            shadowElevation = 4.dp,
-                        ) {
-                            Column {
-                                suggestions.forEach { suggestion ->
-                                    ListItem(
-                                        headlineContent = { Text(suggestion.command) },
-                                        supportingContent = { Text(suggestion.description) },
-                                        leadingContent = {
-                                            Icon(suggestion.icon, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                                        },
-                                        modifier = Modifier.clickable {
-                                            actions.onTextChanged(suggestion.command + " ")
-                                            showCommandPicker = false
-                                        },
-                                    )
-                                }
-                            }
+        // Capped and centered rather than left plain fillMaxWidth(), so the dock doesn't stretch to an
+        // awkward, hard-to-type-in width on a large tablet's wide-layout right pane. On any phone-scale
+        // width (compact or the adaptive shell's ~400dp right pane) the cap never binds, so this Box is
+        // a no-op there -- outer width stays fillMaxWidth() exactly as before, just with the (possibly
+        // narrower) dock centered inside it.
+        // Deliberately no fillMaxWidth() before widthIn(max=...) below: fillMaxWidth() pins both min
+        // and max width to the full available space, so a subsequent widthIn(max) below that pinned
+        // min gets silently overridden back up to full width, defeating the cap on wide panes.
+        Box(modifier = modifier.fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
+            Surface(
+                modifier = Modifier
+                    .widthIn(max = ComposerMaxWidth)
+                    .onGloballyPositioned { coordinates ->
+                        val heightPx = coordinates.size.height
+                        if (heightPx != lastLoggedHeightPx) {
+                            lastLoggedHeightPx = heightPx
+                            HermexLog.d("Composer", "measured height=${heightPx}px")
                         }
-                    }
-                }
+                    },
+                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                shape = RoundedCornerShape(topStart = HermexRadii.SettingsCard, topEnd = HermexRadii.SettingsCard),
+                tonalElevation = 4.dp,
+            ) {
+                Column(modifier = Modifier.navigationBarsPadding()) {
+                    // Hairline separating the dock from the message list above -- the app-wide
+                    // substitute for wrapping the whole (now asymmetrically-rounded) shape in a border.
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f), thickness = 1.dp)
 
-                Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
-                    // Single-row pill: [+] [Ask Hermes] [Steer/Send] [🎤] [waveform]
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 12.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        // + button
-                        IconButton(onClick = { filePickerLauncher.launch(arrayOf("*/*")) }) {
-                            Icon(
-                                Icons.Filled.Add,
-                                contentDescription = "Attach file",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-
-                        // Text field - "Ask Hermes"
-                        OutlinedTextField(
-                            value = composerState.text,
-                            onValueChange = { newValue ->
-                                actions.onTextChanged(newValue)
-                                if (newValue.startsWith("/")) {
-                                    showCommandPicker = true
-                                    commandQuery = newValue
-                                } else {
-                                    showCommandPicker = false
-                                }
-                            },
-                            modifier = Modifier.weight(1f),
-                            placeholder = { Text(if (composerState.isStreaming) "Steer the response…" else "Ask Hermes") },
-                            enabled = composerState.isTextFieldEnabled,
-                            maxLines = 5,
-                            shape = RoundedCornerShape(HermexRadii.Composer),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                                focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                                unfocusedBorderColor = Color.Transparent,
-                                focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
-                            ),
+                    if (attachmentState.pendingAttachments.isNotEmpty()) {
+                        PendingAttachmentStrip(
+                            attachments = attachmentState.pendingAttachments,
+                            onRemove = actions.onRemoveAttachment,
                         )
+                    }
 
-                        // Stop/Steer button (when streaming) or Send button
-                        Box(
-                            modifier = Modifier.size(48.dp),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            when {
-                                composerState.showStopButton -> {
-                                    val haptic = LocalHapticFeedback.current
-                                    FilledIconButton(
-                                        onClick = {
-                                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                            actions.onStop()
-                                        },
-                                        colors = IconButtonDefaults.filledIconButtonColors(
-                                            containerColor = Color.White,
-                                            contentColor = Color.Black,
-                                        ),
-                                        modifier = Modifier.size(48.dp),
-                                    ) {
-                                        Icon(
-                                            Icons.Filled.Close,
-                                            contentDescription = "Stop",
-                                            modifier = Modifier.size(24.dp),
+                    if (showCommandPicker) {
+                        val suggestions = CommandRegistry.filter(commandQuery)
+                        if (suggestions.isNotEmpty()) {
+                            Surface(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(HermexRadii.Accessory),
+                                shadowElevation = 4.dp,
+                            ) {
+                                Column {
+                                    suggestions.forEach { suggestion ->
+                                        ListItem(
+                                            headlineContent = { Text(suggestion.command) },
+                                            supportingContent = { Text(suggestion.description) },
+                                            leadingContent = {
+                                                Icon(suggestion.icon, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                            },
+                                            modifier = Modifier.clickable {
+                                                actions.onTextChanged(suggestion.command + " ")
+                                                showCommandPicker = false
+                                            },
                                         )
                                     }
                                 }
-                                composerState.showSendingSpinner -> CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
-                                else -> FilledIconButton(onClick = actions.onSend, enabled = composerState.canSend) {
-                                    Icon(
-                                        Icons.AutoMirrored.Filled.Send,
-                                        contentDescription = if (composerState.isStreaming) "Steer" else "Send",
-                                    )
-                                }
                             }
                         }
+                    }
 
-                        // Mic button — hold to record voice note
-                        IconButton(
-                            onClick = {},
-                            modifier = Modifier.combinedClickable(
-                                interactionSource = remember { MutableInteractionSource() },
-                                indication = null,
-                                onClick = {
-                                    if (isRecording) {
-                                        val note = voiceRecorder.finish()
-                                        isRecording = false
-                                        if (note != null) actions.onSendVoiceNote(note.file, note.filename)
-                                    }
-                                },
-                                onLongClick = {
-                                    if (!isRecording) {
-                                        val perm = ContextCompat.checkSelfPermission(context, recordAudioPermission)
-                                        if (perm == android.content.pm.PackageManager.PERMISSION_GRANTED) {
-                                            voiceRecorder.begin(coroutineScope)
-                                            isRecording = true
-                                        } else {
-                                            permissionLauncher.launch(recordAudioPermission)
-                                        }
-                                    }
-                                },
-                            ),
+                    Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+                        // Single-row pill: [+] [Ask Hermes] [Send/Steer]
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
-                            if (isRecording) {
+                            // + button
+                            IconButton(onClick = { filePickerLauncher.launch(arrayOf("*/*")) }) {
                                 Icon(
-                                    Icons.Filled.Mic,
-                                    contentDescription = "Stop recording",
-                                    tint = MaterialTheme.colorScheme.error,
-                                )
-                            } else {
-                                Icon(
-                                    Icons.Filled.KeyboardVoice,
-                                    contentDescription = "Hold to record voice note",
+                                    Icons.Filled.Add,
+                                    contentDescription = "Attach file",
                                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
-                        }
 
-                        // Waveform / audio visualization button
-                        IconButton(onClick = { /* TODO: voice input */ }) {
-                            Icon(
-                                Icons.Filled.GraphicEq,
-                                contentDescription = "Voice input",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            // Text field - "Ask Hermes"
+                            OutlinedTextField(
+                                value = composerState.text,
+                                onValueChange = { newValue ->
+                                    actions.onTextChanged(newValue)
+                                    if (newValue.startsWith("/")) {
+                                        showCommandPicker = true
+                                        commandQuery = newValue
+                                    } else {
+                                        showCommandPicker = false
+                                    }
+                                },
+                                modifier = Modifier.weight(1f),
+                                placeholder = { Text(if (composerState.isStreaming) "Steer the response…" else "Ask Hermes") },
+                                enabled = composerState.isTextFieldEnabled,
+                                maxLines = 5,
+                                shape = RoundedCornerShape(HermexRadii.Composer),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                                    focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                                    unfocusedBorderColor = Color.Transparent,
+                                    focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
+                                ),
                             )
+
+                            // Send / Steer button (convertible)
+                            Box(
+                                modifier = Modifier.size(48.dp),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                when {
+                                    composerState.showStopButton -> {
+                                        val haptic = LocalHapticFeedback.current
+                                        FilledIconButton(
+                                            onClick = {
+                                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                actions.onStop()
+                                            },
+                                            colors = IconButtonDefaults.filledIconButtonColors(
+                                                containerColor = MaterialTheme.colorScheme.errorContainer,
+                                                contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                                            ),
+                                            modifier = Modifier.size(48.dp),
+                                        ) {
+                                            Icon(
+                                                Icons.Filled.Close,
+                                                contentDescription = "Stop",
+                                                modifier = Modifier.size(24.dp),
+                                            )
+                                        }
+                                    }
+                                    composerState.isStreaming -> {
+                                        // Steer button during streaming
+                                        FilledIconButton(onClick = actions.onSteer, enabled = composerState.canSend) {
+                                            Icon(
+                                                Icons.AutoMirrored.Filled.Send,
+                                                contentDescription = "Steer",
+                                            )
+                                        }
+                                    }
+                                    else -> {
+                                        // Send button
+                                        FilledIconButton(onClick = actions.onSend, enabled = composerState.canSend) {
+                                            Icon(
+                                                Icons.AutoMirrored.Filled.Send,
+                                                contentDescription = "Send",
+                                            )
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
             }
         }
-    }
 }
 
 /** Shared visual container for the composer's bottom control strip -- a small tonal pill with an

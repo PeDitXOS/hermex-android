@@ -179,9 +179,46 @@ fun ChatScreen(
                     }
                 },
                 actions = {
-                    // Eye icon on right
-                    IconButton(onClick = { /* TODO: toggle theme */ }) {
-                        Icon(Icons.Filled.RemoveRedEye, contentDescription = "Toggle theme")
+                    IconButton(onClick = onOpenWorkspace) {
+                        Icon(Icons.AutoMirrored.Filled.List, contentDescription = "Files")
+                    }
+                    IconButton(onClick = viewModel::loadSession) {
+                        Icon(Icons.Filled.Refresh, contentDescription = "Refresh")
+                    }
+                    Box {
+                        IconButton(onClick = { showSessionMenu = true }) {
+                            Icon(Icons.Filled.MoreVert, contentDescription = "More options")
+                        }
+                        DropdownMenu(expanded = showSessionMenu, onDismissRequest = { showSessionMenu = false }) {
+                            DropdownMenuItem(
+                                text = { Text("Rename") },
+                                onClick = { showSessionMenu = false; showRenameDialog = true },
+                                leadingIcon = { Icon(Icons.Filled.Edit, null) },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Move to Project") },
+                                onClick = {
+                                    showSessionMenu = false
+                                    showMoveDialog = true
+                                    viewModel.loadProjects()
+                                },
+                                leadingIcon = { Icon(Icons.Filled.Folder, null) },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Share") },
+                                onClick = {
+                                    showSessionMenu = false
+                                    sessionId?.let { chatShareSession(context, it, sessionTitle ?: "Session", uiState.messages) }
+                                },
+                                leadingIcon = { Icon(Icons.Filled.Share, null) },
+                            )
+                            HorizontalDivider()
+                            DropdownMenuItem(
+                                text = { Text("Delete", color = MaterialTheme.colorScheme.error) },
+                                onClick = { showSessionMenu = false; showDeleteDialog = true },
+                                leadingIcon = { Icon(Icons.Filled.Delete, null, tint = MaterialTheme.colorScheme.error) },
+                            )
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -207,17 +244,19 @@ fun ChatScreen(
                 actions = ChatComposerActions(
                     onTextChanged = viewModel::onComposerTextChanged,
                     // TtftTracer.start() lives inside ChatViewModel.sendMessage() itself (not
-                    // here) so regenerate/retryLastMessage, which call sendMessage() directly,
-                    // re-arm the same trace instead of reusing stale timing state.
-                    onSend = viewModel::sendMessage,
-                    onStop = viewModel::cancelStream,
-                    onSelectProfile = viewModel::selectProfile,
-                    onOpenModelPicker = viewModel::refreshModelCatalogForPickerOpen,
-                    onSelectModel = viewModel::selectComposerModel,
-                    onAttachFile = viewModel::uploadAttachment,
-                    onRemoveAttachment = viewModel::removePendingAttachment,
-                    onSendVoiceNote = viewModel::sendVoiceNote,
-                ),
+                    actions = ChatComposerActions(
+                                        onTextChanged = viewModel::onComposerTextChanged,
+                                        onSend = viewModel::sendMessage,
+                                        onSteer = viewModel::steerMessage,
+                                        onStop = viewModel::cancelStream,
+                                        onSelectProfile = viewModel::selectProfile,
+                                        onOpenModelPicker = viewModel::refreshModelCatalogForPickerOpen,
+                                        onSelectModel = viewModel::selectComposerModel,
+                                        onAttachFile = viewModel::uploadAttachment,
+                                        onRemoveAttachment = viewModel::removePendingAttachment,
+                                        onSendVoiceNote = viewModel::sendVoiceNote,
+                                        onRefresh = viewModel::loadSession,
+                                    ),
             )
         },
     ) { innerPadding ->
