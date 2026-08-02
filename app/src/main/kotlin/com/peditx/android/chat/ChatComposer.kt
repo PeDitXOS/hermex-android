@@ -8,10 +8,12 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -40,6 +42,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.FilledIconButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -194,9 +197,6 @@ fun ChatComposer(
     val recordingScope = rememberCoroutineScope()
     val haptic = LocalHapticFeedback.current
 
-    // Long press detector for voice recording
-    val longPressTimeout = 500L
-
     fun startRecording() {
         isRecording = true
         recordingDuration = 0
@@ -210,8 +210,7 @@ fun ChatComposer(
 
     fun stopRecording() {
         isRecording = false
-        // TODO: Save voice note and call actions.onSendVoiceNote(file, duration)
-        if (recordingDuration > 500) { // Minimum 500ms
+        if (recordingDuration > 500) {
             // Voice note recorded
         }
     }
@@ -350,7 +349,7 @@ fun ChatComposer(
                                 )
 
                                 // Single action button: Send / Steer / Stop
-                                val (icon, contentDesc, containerColor, contentColor) = when {
+                                val actionButton = when {
                                     composerState.showStopButton -> {
                                         Icons.Filled.Close to "Stop" to MaterialTheme.colorScheme.errorContainer to MaterialTheme.colorScheme.onErrorContainer
                                     }
@@ -361,6 +360,10 @@ fun ChatComposer(
                                         Icons.AutoMirrored.Filled.Send to "Send" to MaterialTheme.colorScheme.primaryContainer to MaterialTheme.colorScheme.onPrimaryContainer
                                     }
                                 }
+                                val icon = actionButton.first
+                                val contentDesc = actionButton.second
+                                val containerColor = actionButton.third.first
+                                val contentColor = actionButton.third.second
 
                                 Box(
                                     modifier = Modifier
@@ -434,7 +437,7 @@ fun ChatComposer(
                                                 // Click handled by combinedClickable
                                             },
                                             enabled = composerState.canSend || composerState.showStopButton,
-                                            colors = androidx.compose.material3.FilledIconButtonDefaults.filledIconButtonColors(
+                                            colors = FilledIconButtonDefaults.filledIconButtonColors(
                                                 containerColor = containerColor,
                                                 contentColor = contentColor,
                                                 disabledContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
