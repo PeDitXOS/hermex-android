@@ -1,0 +1,13 @@
+package com.peditx.hermex.settings
+
+import com.peditx.hermex.core.storage.CustomHttpHeader
+
+data class CustomHeadersUiState(
+    val isLoading: Boolean = true,
+    /** Editable draft rows -- only written to the store when [CustomHeadersViewModel.save] is
+     * called, so navigating back without saving discards any in-progress edit. */
+    val headers: List<CustomHttpHeader> = emptyList(),
+    val isSaving: Boolean = false,
+    /** Header IDs currently revealed (value visible). */
+    val revealedHeaderIds: Set<String> = emptySet(),
+)

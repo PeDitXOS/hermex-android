@@ -1,0 +1,244 @@
+package com.peditx.hermex.settings
+
+import app.cash.turbine.ReceiveTurbine
+import app.cash.turbine.test
+import com.peditx.hermex.auth.AuthRepository
+import com.peditx.hermex.auth.AuthState
+import com.peditx.hermex.core.network.FakeCookieStore
+import com.peditx.hermex.core.network.NetworkModule
+import com.peditx.hermex.core.storage.FakeServerStore
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.setMain
+import org.junit.After
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Before
+import org.junit.Test
+
+private suspend fun <T> ReceiveTurbine<T>.awaitUntil(predicate: (T) -> Boolean): T {
+    var item = awaitItem()
+    while (!predicate(item)) item = awaitItem()
+    return item
+}
+
+@OptIn(ExperimentalCoroutinesApi::class)
+class ServersViewModelTest {
+    @Before
+    fun setUp() {
+        Dispatchers.setMain(UnconfinedTestDispatcher())
+    }
+
+    @After
+    fun tearDown() {
+        Dispatchers.resetMain()
+    }
+
+    private fun repositoryFor(serverStore: FakeServerStore): AuthRepository {
+        lateinit var repo: AuthRepository
+        val networkModule = NetworkModule(FakeCookieStore()) { repo.handleUnauthorized() }
+        repo = AuthRepository(networkModule, serverStore)
+        return repo
+    }
+
+    @Test
+    fun `loads the configured servers and the active server id`() = runTest {
+        val store = FakeServerStore("https://a.example.com/")
+        val activeId = store.activeServerSnapshot()!!.id
+        val viewModel = ServersViewModel(repositoryFor(store), store)
+
+        viewModel.uiState.test {
+            val loaded = awaitUntil { !it.isLoading }
+            assertEquals(1, loaded.servers.size)
+            assertEquals(activeId, loaded.activeServerId)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `addServer via the editor persists a new server`() = runTest {
+        val store = FakeServerStore()
+        val viewModel = ServersViewModel(repositoryFor(store), store)
+        viewModel.uiState.test { awaitUntil { !it.isLoading }; cancelAndIgnoreRemainingEvents() }
+
+        viewModel.startAdding()
+        viewModel.updateEditorName("Mac Mini")
+        viewModel.updateEditorUrl("hermex.local")
+        viewModel.saveEditor()
+
+        assertEquals(1, store.state.value.servers.size)
+        val added = store.state.value.servers.single()
+        assertEquals("Mac Mini", added.name)
+        assertEquals("https://hermex.local/", added.baseUrl)
+        assertEquals(added.id, store.state.value.activeServerId) // first server auto-activates
+    }
+
+    @Test
+    fun `an invalid url in the editor surfaces an error and does not persist`() = runTest {
+        val store = FakeServerStore()
+        val viewModel = ServersViewModel(repositoryFor(store), store)
+        viewModel.uiState.test { awaitUntil { !it.isLoading }; cancelAndIgnoreRemainingEvents() }
+
+        viewModel.startAdding()
+        viewModel.updateEditorUrl("   ")
+        viewModel.saveEditor()
+
+        assertTrue(viewModel.uiState.value.editorError != null)
+        assertTrue(store.state.value.servers.isEmpty())
+    }
+
+    @Test
+    fun `adding a duplicate normalized url is rejected`() = runTest {
+        val store = FakeServerStore("https://a.example.com/")
+        val viewModel = ServersViewModel(repositoryFor(store), store)
+        viewModel.uiState.test { awaitUntil { !it.isLoading }; cancelAndIgnoreRemainingEvents() }
+
+        viewModel.startAdding()
+        viewModel.updateEditorUrl("a.example.com")
+        viewModel.saveEditor()
+
+        assertEquals("This server is already configured.", viewModel.uiState.value.editorError)
+        assertEquals(1, store.state.value.servers.size)
+    }
+
+    @Test
+    fun `editing a server keeps its id stable`() = runTest {
+        val store = FakeServerStore("https://a.example.com/")
+        val original = store.activeServerSnapshot()!!
+        val viewModel = ServersViewModel(repositoryFor(store), store)
+        viewModel.uiState.test { awaitUntil { !it.isLoading }; cancelAndIgnoreRemainingEvents() }
+
+        viewModel.startEditing(original)
+        viewModel.updateEditorName("Renamed")
+        viewModel.saveEditor()
+
+        val edited = store.state.value.servers.single()
+        assertEquals(original.id, edited.id)
+        assertEquals("Renamed", edited.name)
+    }
+
+    @Test
+    fun `editing the active server's url triggers a live networking repoint`() = runTest {
+        val store = FakeServerStore("https://a.example.com/")
+        val active = store.activeServerSnapshot()!!
+        val repo = repositoryFor(store)
+        repo.restoreSavedServer()
+        val viewModel = ServersViewModel(repo, store)
+        viewModel.uiState.test { awaitUntil { !it.isLoading }; cancelAndIgnoreRemainingEvents() }
+
+        viewModel.startEditing(active)
+        viewModel.updateEditorUrl("a-edited.example.com")
+        viewModel.saveEditor()
+
+        assertEquals("https://a-edited.example.com/", store.activeServerSnapshot()?.baseUrl)
+        val state = repo.state.value as AuthState.LoggedIn
+        assertEquals(active.id, state.serverId) // same server identity
+        assertEquals("https://a-edited.example.com/", state.serverUrl) // repointed, no restart needed
+    }
+
+    @Test
+    fun `editing the active server's display name only does not disrupt the active server url`() = runTest {
+        val store = FakeServerStore("https://a.example.com/")
+        val active = store.activeServerSnapshot()!!
+        val repo = repositoryFor(store)
+        repo.restoreSavedServer()
+        val before = repo.state.value as AuthState.LoggedIn
+        val viewModel = ServersViewModel(repo, store)
+        viewModel.uiState.test { awaitUntil { !it.isLoading }; cancelAndIgnoreRemainingEvents() }
+
+        viewModel.startEditing(active)
+        viewModel.updateEditorName("Renamed")
+        viewModel.saveEditor()
+
+        assertEquals(before, repo.state.value) // untouched: no url change, nothing to repoint
+    }
+
+    @Test
+    fun `editing an inactive server's url leaves the active server's live networking alone`() = runTest {
+        val store = FakeServerStore()
+        val first = store.addServer("A", "https://a.example.com/")
+        val second = store.addServer("B", "https://b.example.com/")
+        val repo = repositoryFor(store)
+        repo.restoreSavedServer() // A (first added) is active
+        val viewModel = ServersViewModel(repo, store)
+        viewModel.uiState.test { awaitUntil { !it.isLoading }; cancelAndIgnoreRemainingEvents() }
+
+        viewModel.startEditing(second)
+        viewModel.updateEditorUrl("b-edited.example.com")
+        viewModel.saveEditor()
+
+        assertEquals("https://b-edited.example.com/", store.state.value.servers.first { it.id == second.id }.baseUrl)
+        val state = repo.state.value as AuthState.LoggedIn
+        assertEquals(first.id, state.serverId)
+        assertEquals("https://a.example.com/", state.serverUrl) // active server's url untouched
+    }
+
+    @Test
+    fun `a validation error while editing the active server does not repoint anything`() = runTest {
+        val store = FakeServerStore("https://a.example.com/")
+        val active = store.activeServerSnapshot()!!
+        val repo = repositoryFor(store)
+        repo.restoreSavedServer()
+        val before = repo.state.value as AuthState.LoggedIn
+        val viewModel = ServersViewModel(repo, store)
+        viewModel.uiState.test { awaitUntil { !it.isLoading }; cancelAndIgnoreRemainingEvents() }
+
+        viewModel.startEditing(active)
+        viewModel.updateEditorUrl("   ")
+        viewModel.saveEditor()
+
+        assertTrue(viewModel.uiState.value.editorError != null)
+        assertEquals(before, repo.state.value)
+        assertEquals("https://a.example.com/", store.activeServerSnapshot()?.baseUrl)
+    }
+
+    @Test
+    fun `switchTo makes another server active`() = runTest {
+        val store = FakeServerStore()
+        val first = store.addServer("A", "https://a.example.com/")
+        val second = store.addServer("B", "https://b.example.com/")
+        val repo = repositoryFor(store)
+        val viewModel = ServersViewModel(repo, store)
+        viewModel.uiState.test { awaitUntil { !it.isLoading }; cancelAndIgnoreRemainingEvents() }
+
+        viewModel.switchTo(second.id)
+
+        assertEquals(second.id, store.state.value.activeServerId)
+        assertEquals(second.id, (repo.state.value as AuthState.LoggedIn).serverId)
+        assertEquals(first.id, store.state.value.servers.first { it.id != second.id }.id) // A still configured
+    }
+
+    @Test
+    fun `confirmRemoval forgets the server and clears the pending-removal dialog state`() = runTest {
+        val store = FakeServerStore("https://a.example.com/")
+        val target = store.activeServerSnapshot()!!
+        val viewModel = ServersViewModel(repositoryFor(store), store)
+        viewModel.uiState.test { awaitUntil { !it.isLoading }; cancelAndIgnoreRemainingEvents() }
+
+        viewModel.requestRemoval(target)
+        assertEquals(target, viewModel.uiState.value.serverPendingRemoval)
+
+        viewModel.confirmRemoval()
+
+        assertNull(viewModel.uiState.value.serverPendingRemoval)
+        assertTrue(store.state.value.servers.isEmpty())
+    }
+
+    @Test
+    fun `cancelRemoval dismisses the dialog without removing anything`() = runTest {
+        val store = FakeServerStore("https://a.example.com/")
+        val target = store.activeServerSnapshot()!!
+        val viewModel = ServersViewModel(repositoryFor(store), store)
+        viewModel.uiState.test { awaitUntil { !it.isLoading }; cancelAndIgnoreRemainingEvents() }
+
+        viewModel.requestRemoval(target)
+        viewModel.cancelRemoval()
+
+        assertNull(viewModel.uiState.value.serverPendingRemoval)
+        assertEquals(1, store.state.value.servers.size)
+    }
+}

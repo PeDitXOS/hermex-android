@@ -7,9 +7,9 @@
         android:enabled="true"
         android:icon="@android:drawable/ic_menu_send">
         <intent
-            android:action="com.hermex.android.ACTION_NEW_CHAT"
-            android:targetPackage="com.hermex.android"
-            android:targetClass="com.hermex.android.MainActivity" />
+            android:action="com.peditx.hermex.ACTION_NEW_CHAT"
+            android:targetPackage="com.peditx.hermex"
+            android:targetClass="com.peditx.hermex.MainActivity" />
     </shortcut>
     <shortcut
         android:shortcutId="new_chat_voice"
@@ -18,8 +18,8 @@
         android:enabled="true"
         android:icon="@android:drawable/ic_btn_speak_now">
         <intent
-            android:action="com.hermex.android.ACTION_NEW_CHAT_VOICE"
-            android:targetPackage="com.hermex.android"
-            android:targetClass="com.hermex.android.MainActivity" />
+            android:action="com.peditx.hermex.ACTION_NEW_CHAT_VOICE"
+            android:targetPackage="com.peditx.hermex"
+            android:targetClass="com.peditx.hermex.MainActivity" />
     </shortcut>
 </shortcuts>

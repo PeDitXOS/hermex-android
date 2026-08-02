@@ -8,15 +8,15 @@ plugins {
 }
 
 android {
-    namespace = "com.hermex.android"
+    namespace = "com.peditx.hermex"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.hermex.android"
+        applicationId = "com.peditx.hermex"
         minSdk = 26
         targetSdk = 36
-        versionCode = System.getenv("VERSION_CODE")?.toIntOrNull() ?: 34
-        versionName = "1.0.2"
+        versionCode = System.getenv("VERSION_CODE")?.toIntOrNull() ?: 103
+        versionName = "1.0.3"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

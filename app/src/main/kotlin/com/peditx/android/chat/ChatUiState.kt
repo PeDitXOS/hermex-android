@@ -1,0 +1,184 @@
+package com.peditx.hermex.chat
+
+import com.peditx.hermex.core.network.dto.ChatMessage
+import com.peditx.hermex.core.network.dto.ModelCatalogGroup
+import com.peditx.hermex.core.network.dto.ProfileSummary
+import com.peditx.hermex.core.network.dto.ProjectSummary
+
+data class ChatUiState(
+    val isLoading: Boolean = true,
+    val messages: List<ChatMessage> = emptyList(),
+    /** In-flight assistant token buffer -- rendered as a distinct "live" bubble, merged into
+     * [messages] as a finalized [ChatMessage] once the stream ends. */
+    val streamingText: String = "",
+    val streamingReasoning: String = "",
+    val isStreaming: Boolean = false,
+    val isSending: Boolean = false,
+    val activeToolCalls: List<ToolCallUi> = emptyList(),
+    val composerText: String = "",
+    val errorMessage: String? = null,
+    val profileOptions: List<ProfileSummary> = emptyList(),
+    val selectedProfileName: String? = null,
+    val isSwitchingProfile: Boolean = false,
+    /** Set while waiting on a "start a new session with this profile?" confirmation -- picking a
+     * different profile mid-conversation doesn't switch this session in place (matching iOS: an
+     * existing transcript stays on its original profile), it offers a fresh one instead. */
+    val pendingProfileSwitch: String? = null,
+    /** Loaded once from [com.peditx.hermex.core.storage.ChatPreferencesStore] -- whether a fresh
+     * [ReasoningBlock] should start expanded rather than collapsed. */
+    val expandThinkingByDefault: Boolean = false,
+    /** Loaded once from [com.peditx.hermex.core.storage.ChatPreferencesStore] -- whether a fresh
+     * [ToolCallUi] card should start expanded rather than collapsed. */
+    val expandToolCallsByDefault: Boolean = false,
+    /** This session's own workspace/model/provider, loaded from [ChatMessage]'s sibling
+     * `SessionDetail` when the session loads and kept in sync after every
+     * `/api/session/update` -- sent on every `/api/chat/start` so an existing conversation keeps
+     * using whatever it was already using (or whatever the composer just switched it to). */
+    val currentWorkspace: String? = null,
+    val currentModel: String? = null,
+    val currentModelProvider: String? = null,
+    /** This session's project assignment, loaded the same place [currentWorkspace] is (the
+     * `SessionDetail` returned by [ChatViewModel.loadSession]) and updated locally by
+     * [ChatViewModel.moveSessionToProject] on success. Null means "no project", same as
+     * [com.peditx.hermex.core.network.dto.SessionSummary.projectId]. */
+    val currentProjectId: String? = null,
+    /** Backs the "Move to Project" dialog's picker -- loaded on demand by
+     * [ChatViewModel.loadProjects] (same `api.projects()` call
+     * [com.peditx.hermex.sessions.SessionListViewModel] uses for its own copy of this dialog;
+     * not a shared repository, just the same endpoint). */
+    val projects: List<ProjectSummary> = emptyList(),
+    val isLoadingProjects: Boolean = false,
+    val projectsErrorMessage: String? = null,
+    val modelCatalogGroups: List<ModelCatalogGroup> = emptyList(),
+    val isLoadingModelCatalog: Boolean = false,
+    /** Covers both the model-switch and (existing) profile-switch API calls -- either one
+     * updates this session's live configuration in place. */
+    val isUpdatingComposerConfiguration: Boolean = false,
+    /** Set to true right after a manual model pick succeeds; sent as `explicit_model_pick: true`
+     * on the *next* `/api/chat/start` only, then cleared -- tells the server this model change
+     * was deliberate rather than an implicit default, matching iOS exactly. */
+    val pendingExplicitModelPick: Boolean = false,
+    /** True when [messages] came from the offline cache rather than a successful network fetch --
+     * either shown immediately on screen load (before the network result lands) or kept on screen
+     * because the network call then failed. */
+    val isShowingCachedData: Boolean = false,
+    /** User-facing explanation for [isShowingCachedData]. Null whenever [isShowingCachedData] is
+     * false. */
+    val cacheStatusMessage: String? = null,
+    /** Attachments staged for the next [ChatViewModel.sendMessage] call -- populated by
+     * [ChatViewModel.uploadAttachment] (the composer's attach button) via
+     * [ChatViewModel.addUploadedAttachment] once each picked file's upload completes. */
+    val pendingAttachments: List<PendingAttachmentUi> = emptyList(),
+    /** True while a single attachment's upload is in flight -- drives the composer's uploading
+     * indicator; see [ChatViewModel.uploadAttachment] / [ChatViewModel.performAttachmentUpload]. */
+    val isUploadingAttachment: Boolean = false,
+
+    /** Non-null when the server is waiting for approval to execute a tool. */
+    val pendingApproval: PendingApprovalUi? = null,
+    val isRespondingToApproval: Boolean = false,
+    val approvalErrorMessage: String? = null,
+    val isSessionApprovalBypassEnabled: Boolean = false,
+
+    /** Non-null when the server needs a clarifying answer before proceeding. */
+    val pendingClarification: PendingClarificationUi? = null,
+    val isRespondingToClarification: Boolean = false,
+    val clarificationErrorMessage: String? = null,
+    val hasDisconnectedStream: Boolean = false,
+    val isReattaching: Boolean = false,
+    val disconnectedStreamId: String? = null,
+    /** True while a server-side cancel is in flight (POST /api/chat/cancel has been sent but the
+     * response hasn't landed yet). Set by [ChatViewModel.cancelStream] and awaited by the next
+     * send / edit / regenerate / retry call so the server has had a chance to actually free the
+     * session before we ask it to truncate or start a new stream. Without this, the next
+     * chat/start can race ahead of the cancel and get a 409 back. */
+    val isStopping: Boolean = false,
+
+    /** True while a user message edit is in progress (truncate + re-send). */
+    val isEditingMessage: Boolean = false,
+    /** True while a fork/branch operation is in flight. */
+    val isForkingMessage: Boolean = false,
+    /** Streaming send behavior: steer (default), cancel-and-send, or queue. */
+    val streamingSendBehavior: StreamingSendBehavior = StreamingSendBehavior.STEER,
+    /** True while a steer request is being sent to the server. */
+    val isSteering: Boolean = false,
+)
+
+enum class StreamingSendBehavior {
+    STEER,
+    CANCEL_AND_SEND,
+    QUEUE,
+}
+
+/** Computed hint shown above the composer when a send failed and the text is preserved for retry. */
+val ChatUiState.showRetryHint: String?
+    get() = when {
+        errorMessage != null && composerText.isNotBlank() && !isSending && !isStreaming -> "Tap Send to retry"
+        else -> null
+    }
+
+/** A file already uploaded via `HermexApi.uploadAttachment` and staged to go out with the next
+ * sent message -- the local, UI-facing mirror of a [com.peditx.hermex.core.network.dto.MessageAttachment].
+ * [id] is a synthetic local key (not server-provided) purely for list operations like
+ * [ChatViewModel.removePendingAttachment], since the server shape itself has nothing stable to
+ * key on before a message is actually sent. */
+data class PendingAttachmentUi(
+    val id: String,
+    val name: String? = null,
+    val path: String? = null,
+    val mime: String? = null,
+    val size: Long? = null,
+    val isImage: Boolean? = null,
+)
+
+data class PendingApprovalUi(
+    val approvalId: String?,
+    val command: String?,
+    val description: String?,
+    val patternKeys: List<String>,
+    val pendingCount: Int,
+)
+
+data class PendingClarificationUi(
+    val clarifyId: String?,
+    val question: String,
+    val choices: List<String>,
+    val sessionId: String?,
+    val timeoutSeconds: Int?,
+    val expiresAt: Double?,
+    val pendingCount: Int,
+)
+
+data class ToolCallUi(
+    val stableId: String,
+    val name: String?,
+    val preview: String?,
+    val isComplete: Boolean = false,
+    val isError: Boolean = false,
+    val durationSeconds: Double? = null,
+    val rawArgs: String? = null,
+    /** `messages.size` at the moment this tool call started -- i.e. the index the eventual
+     * finalized assistant reply will occupy once the turn completes. Lets the transcript render
+     * this card immediately before that message instead of always after every message,
+     * regardless of which turn it actually happened in. */
+    val anchorMessageCount: Int = 0,
+)
+
+/**
+ * Historical replay's analog of a live [ToolCallUi]: per API_CONTRACT.md, a persisted tool result
+ * arrives as a plain [ChatMessage] with `role: "tool"` (`name`/`toolCallId`/`content` set) rather
+ * than the live event stream's `tool`/`tool_complete` SSE payloads. Without this mapping such a
+ * message falls through to [MessageBubble], which just prints `content` as chat prose -- and that
+ * content is frequently a raw JSON blob, since it's whatever the tool actually returned. Mapping
+ * it into the same [ToolCallUi] model lets it render through the same [ToolCallCard] a live tool
+ * call uses, instead of dumping JSON into the transcript. Returns null for every other role so
+ * callers can fall back to [MessageBubble] unchanged.
+ */
+fun ChatMessage.toHistoricalToolCallUi(): ToolCallUi? {
+    if (role != "tool") return null
+    return ToolCallUi(
+        stableId = toolCallId ?: stableId,
+        name = name,
+        preview = content,
+        isComplete = true,
+    )
+}

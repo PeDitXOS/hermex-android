@@ -1,0 +1,1570 @@
+package com.peditx.hermex.chat
+
+import android.content.Context
+import android.net.Uri
+import android.os.Environment
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.peditx.hermex.auth.AuthRepository
+import com.peditx.hermex.auth.serverIdOrNull
+import com.peditx.hermex.core.cache.NoOpOfflineCacheRepository
+import com.peditx.hermex.core.cache.OfflineCacheRepository
+import com.peditx.hermex.core.network.ApiError
+import com.peditx.hermex.core.network.HermexApi
+import com.peditx.hermex.core.network.SseEvent
+import com.peditx.hermex.core.network.SseStreamSource
+import com.peditx.hermex.core.network.ToolEventPayload
+import com.peditx.hermex.core.network.chatStreamUrl
+import com.peditx.hermex.core.network.dto.ChatMessage
+import com.peditx.hermex.core.network.dto.ChatStartRequest
+import com.peditx.hermex.core.network.dto.ChatStartResponse
+import com.peditx.hermex.core.network.dto.MessageAttachment
+import com.peditx.hermex.core.network.dto.ModelCatalogOption
+import com.peditx.hermex.core.network.dto.ModelCatalogParser
+import com.peditx.hermex.core.network.dto.NewSessionRequest
+import com.peditx.hermex.core.network.dto.ProfileSwitchRequest
+import com.peditx.hermex.core.network.dto.SessionProjectRequest
+import com.peditx.hermex.core.network.dto.UpdateSessionRequest
+import com.peditx.hermex.core.network.dto.UploadResponse
+import com.peditx.hermex.core.network.dto.buildAttachedFilesMarker
+import com.peditx.hermex.core.network.dto.capAtChatStartLimit
+import com.peditx.hermex.core.network.dto.mergingLiveModels
+import com.peditx.hermex.core.network.dto.SessionResponse
+import com.peditx.hermex.core.network.safeApiCall
+import com.peditx.hermex.core.storage.ChatPreferencesStore
+import com.peditx.hermex.core.util.HermexLog
+import com.peditx.hermex.core.util.TtftTracer
+import com.peditx.hermex.chat.ResponseCompletionNotifier
+import java.io.File
+import java.util.UUID
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.update
+import com.peditx.hermex.core.network.dto.ApprovalRespondRequest
+import com.peditx.hermex.core.network.dto.ClarificationRespondRequest
+import com.peditx.hermex.core.network.dto.SessionYoloRequest
+import com.peditx.hermex.core.network.dto.TruncateSessionRequest
+import com.peditx.hermex.core.network.dto.BranchSessionRequest
+import com.peditx.hermex.core.network.dto.SessionRenameRequest
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.MultipartBody
+import okhttp3.RequestBody.Companion.toRequestBody
+import android.media.MediaPlayer
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+
+private const val OFFLINE_CACHE_MESSAGE = "Unable to reach server -- showing cached conversation"
+
+/**
+ * Drives one chat session: loads recent history, sends a message, opens the SSE stream for the
+ * reply, and folds each [SseEvent] into [ChatUiState] as it arrives. Instances are retained in
+ * an app-owned ViewModelStore (server + session keyed) rather than a chat destination's store, so
+ * replacing a navigation entry does not cancel an in-flight response. Mirrors iOS's
+ * `ChatViewModel` streaming state machine, minus reconnect-with-replay (explicitly deferred --
+ * see API_CONTRACT.md).
+ *
+ * TODO(v0.3.0 audit): steer-while-running and approval/clarification are NOT implemented. Neither
+ * has a documented endpoint or SSE event shape in API_CONTRACT.md, and [SseEventParser] doesn't
+ * decode an `approval`/`clarification` event today (an event named `approval` currently degrades
+ * to [SseEvent.Unknown], see `SseEventParserTest`) -- wiring either up would mean inventing a wire
+ * contract with no way to verify it. Revisit once the server side documents the real shapes.
+ */
+class ChatViewModel(
+    private val sessionId: String,
+    private val authRepository: AuthRepository,
+    private val sseClient: SseStreamSource,
+    private val chatPreferencesStore: ChatPreferencesStore,
+    private val offlineCacheRepository: OfflineCacheRepository = NoOpOfflineCacheRepository,
+    /** Defaults to an always-fails stub so every existing test/call site that doesn't care about
+     * attachments keeps compiling unchanged -- see [AttachmentFileReader]'s doc for why real Uri
+     * construction isn't available in this project's plain JVM unit tests anyway. */
+    private val attachmentFileReader: AttachmentFileReader = AttachmentFileReader { AttachmentReadResult.Unreadable },
+    /** Injected callback for local response-completion notifications. No-op by default so every
+     * existing test/call site keeps compiling unchanged. */
+    private val responseCompletionNotifier: ResponseCompletionNotifier = ResponseCompletionNotifier { _, _ -> },
+    /** Injected controller for the chat-stream foreground service. No-op by default so every
+     * existing test/call site keeps compiling unchanged. */
+    private val streamingForegroundController: StreamingForegroundController = StreamingForegroundController.NoOp,
+    private val context: Context, // Required for TTS file operations
+) : ViewModel() {
+    private val _uiState = MutableStateFlow(ChatUiState())
+    val uiState: StateFlow<ChatUiState> = _uiState.asStateFlow()
+
+    private var streamJob: Job? = null
+    private var activeStreamId: String? = null
+    private var approvalPollingJob: Job? = null
+    private var clarificationPollingJob: Job? = null
+    /** Tracks the in-flight server cancel so subsequent sends / edits / regenerates can await it
+     * before issuing their own request. Without this, an immediate "stop then send" can race the
+     * cancel POST -- the new chat/start reaches the server before the previous stream has been
+     * released, and the server returns 409 "session already has an active stream" (Issue #10). */
+    private var cancelJob: Job? = null
+
+    private val currentSessionId: String get() = sessionId
+
+    /** Explicit reason for stream termination -- avoids conflating normal completion
+     * (should notify) with user-cancellation or errors (should not notify). */
+    private enum class StreamCompletionReason { NORMAL, CANCELLED, ERROR }
+
+    init {
+        loadSession()
+        viewModelScope.launch {
+            val expandThinkingByDefault = chatPreferencesStore.loadExpandThinkingByDefault()
+            _uiState.update { it.copy(expandThinkingByDefault = expandThinkingByDefault) }
+            val expandToolCallsByDefault = chatPreferencesStore.loadExpandToolCallsByDefault()
+            _uiState.update { it.copy(expandToolCallsByDefault = expandToolCallsByDefault) }
+        }
+        viewModelScope.launch {
+            var previousServerId: String? = null
+            var sawFirstState = false
+            authRepository.state.collect { state ->
+                val currentServerId = state.serverIdOrNull
+                // Only react to an actual *change* after streaming started -- the first emission
+                // here is just this collector's own startup snapshot (StateFlow always replays
+                // its current value to a new collector), not a real switch.
+                if (sawFirstState && currentServerId != previousServerId && _uiState.value.isStreaming) {
+                    HermexLog.w("Chat", "active server changed mid-stream -- closing the local stream")
+                    finalizeStream(errorMessage = "The active server changed, so this run was stopped.", reason = StreamCompletionReason.CANCELLED)
+                }
+                previousServerId = currentServerId
+                sawFirstState = true
+            }
+        }
+    }
+
+    /** Runs after the session load, in the same coroutine rather than a concurrent one, so the
+     * two requests hit the server in a fixed order (session, then profiles) -- deterministic for
+     * tests against a single-queue MockWebServer, and irrelevant in production either way. */
+    private suspend fun loadProfiles(api: HermexApi) {
+        try {
+            val response = safeApiCall { api.profiles() }
+            _uiState.update {
+                it.copy(
+                    profileOptions = response.profiles.orEmpty(),
+                    selectedProfileName = response.effectiveDefaultProfileName,
+                )
+            }
+        } catch (e: ApiError) {
+            // Best-effort: the composer profile selector just stays empty/disabled. Not worth
+            // surfacing as a hard error alongside the session transcript itself.
+            HermexLog.w("Chat", "Could not load profiles: ${e.message}")
+        }
+    }
+
+    /** Shows the offline cache immediately (if there is one) while the network fetch is still in
+     * flight -- reopening a session you've read before doesn't start from a blank transcript --
+     * then a successful fetch replaces it with fresh data (and refreshes the cache for next
+     * time), while a failed fetch just leaves the cached messages on screen with
+     * [ChatUiState.cacheStatusMessage] explaining why. If there's no cache at all, a failed fetch
+     * falls through to the existing plain error state. */
+    fun loadSession() {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+            val serverId = authRepository.activeServerId()
+            if (serverId != null) {
+                val cached = offlineCacheRepository.cachedSessionDetail(serverId, sessionId)
+                if (cached != null) {
+                    _uiState.update {
+                        it.copy(
+                            messages = cached.messages.orEmpty(),
+                            currentWorkspace = cached.workspace,
+                            currentModel = cached.model,
+                            currentModelProvider = cached.modelProvider,
+                            currentProjectId = cached.projectId,
+                            isShowingCachedData = true,
+                            cacheStatusMessage = OFFLINE_CACHE_MESSAGE,
+                        )
+                    }
+                }
+            }
+            val api = authRepository.apiForActiveServer()
+            if (api == null) {
+                _uiState.update { it.copy(isLoading = false, errorMessage = "Not signed in.") }
+                return@launch
+            }
+            try {
+                val response = safeApiCall { api.session(sessionId = sessionId, messages = 1, msgLimit = 50) }
+                val session = response.session
+                _uiState.update {
+                    it.copy(
+                        isLoading = false,
+                        messages = session?.messages.orEmpty(),
+                        currentWorkspace = session?.workspace,
+                        currentModel = session?.model,
+                        currentModelProvider = session?.modelProvider,
+                        currentProjectId = session?.projectId,
+                        isShowingCachedData = false,
+                        cacheStatusMessage = null,
+                        errorMessage = null,
+                        hasDisconnectedStream = session?.activeStreamId != null && activeStreamId == null,
+                        disconnectedStreamId = if (session?.activeStreamId != null && activeStreamId == null) session.activeStreamId else null,
+                    )
+                }
+                if (serverId != null && session != null) {
+                    viewModelScope.launch { offlineCacheRepository.cacheSessionDetail(serverId, sessionId, session) }
+                }
+            } catch (e: ApiError) {
+                val hasCache = _uiState.value.isShowingCachedData
+                _uiState.update {
+                    it.copy(
+                        isLoading = false,
+                        errorMessage = if (hasCache) null else (e.message ?: "Could not load session."),
+                        cacheStatusMessage = if (hasCache) OFFLINE_CACHE_MESSAGE else null,
+                    )
+                }
+            }
+            loadProfiles(api)
+        }
+    }
+
+    /** Refetches `/api/models` (so the picker stops pinning the chat-load-time snapshot), then
+     * overlays the active provider's live list -- both best-effort, matching iOS's
+     * `refreshModelCatalogForPickerOpen`: a failure just means the picker keeps whatever it
+     * already had. */
+    fun refreshModelCatalogForPickerOpen() {
+        val api = authRepository.apiForActiveServer() ?: return
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoadingModelCatalog = true) }
+            try {
+                val response = safeApiCall { api.models() }
+                val groups = ModelCatalogParser.parseGroups(response)
+                if (groups.isNotEmpty()) {
+                    _uiState.update { it.copy(modelCatalogGroups = groups) }
+                }
+            } catch (e: ApiError) {
+                HermexLog.w("Chat", "Could not refresh model catalog: ${e.message}")
+            }
+            val live = runCatching { safeApiCall { api.modelsLive() } }.getOrNull()
+            if (live != null) {
+                _uiState.update { it.copy(modelCatalogGroups = it.modelCatalogGroups.mergingLiveModels(live)) }
+            }
+            _uiState.update { it.copy(isLoadingModelCatalog = false) }
+        }
+    }
+
+    /** Updates *this* session's model/provider in place via `/api/session/update` -- unlike
+     * profile switching, this never starts a new session. Blocked while a stream is actively
+     * running (matching iOS's `activeStreamID == nil` guard); a no-op if [option] is already the
+     * current selection. */
+    fun selectComposerModel(option: ModelCatalogOption) {
+        val state = _uiState.value
+        if (option.matchesSelection(state.currentModel, state.currentModelProvider)) return
+        if (state.isStreaming) {
+            _uiState.update { it.copy(errorMessage = "Wait for the current response to finish before changing models.") }
+            return
+        }
+        val api = authRepository.apiForActiveServer()
+        if (api == null) {
+            _uiState.update { it.copy(errorMessage = "Not signed in.") }
+            return
+        }
+        viewModelScope.launch {
+            _uiState.update { it.copy(isUpdatingComposerConfiguration = true, errorMessage = null) }
+            try {
+                val response = safeApiCall {
+                    api.updateSession(
+                        UpdateSessionRequest(
+                            sessionId = sessionId,
+                            workspace = state.currentWorkspace,
+                            model = option.id,
+                            modelProvider = option.providerId,
+                        ),
+                    )
+                }
+                _uiState.update {
+                    it.copy(
+                        isUpdatingComposerConfiguration = false,
+                        currentModel = response.session?.model ?: option.id,
+                        currentModelProvider = response.session?.modelProvider ?: option.providerId,
+                        currentWorkspace = response.session?.workspace ?: it.currentWorkspace,
+                        pendingExplicitModelPick = true,
+                    )
+                }
+            } catch (e: ApiError) {
+                // Keeps the previous model/provider on failure -- only the error surfaces.
+                _uiState.update {
+                    it.copy(isUpdatingComposerConfiguration = false, errorMessage = e.message ?: "Could not change model.")
+                }
+            }
+        }
+    }
+
+    fun onComposerTextChanged(value: String) {
+        _uiState.update { it.copy(composerText = value) }
+    }
+
+    /** Stages externally supplied text (Android share sheet) for user review. This deliberately
+     * never sends; it only pre-fills an empty composer so the user can edit or discard first. */
+    fun stageDraftIfComposerEmpty(value: String) {
+        val draft = value.trim()
+        if (draft.isEmpty()) return
+        _uiState.update { state ->
+            if (state.composerText.isBlank()) state.copy(composerText = draft) else state
+        }
+    }
+
+    /** Folds a completed upload's response into [ChatUiState.pendingAttachments]. Called by
+     * [performAttachmentUpload] after a real `HermexApi.uploadAttachment()` succeeds; kept
+     * `internal` rather than `private` so tests can stage pending attachments directly without a
+     * real upload/network call. A [response] carrying [UploadResponse.error] surfaces that error
+     * the same way other composer failures do, without ever entering the pending list. */
+    internal fun addUploadedAttachment(response: UploadResponse) {
+        if (response.error != null) {
+            _uiState.update { it.copy(errorMessage = response.error) }
+            return
+        }
+        val attachment = PendingAttachmentUi(
+            id = UUID.randomUUID().toString(),
+            name = response.filename,
+            path = response.path,
+            mime = response.mime,
+            size = response.size,
+            isImage = response.isImage,
+        )
+        _uiState.update { it.copy(pendingAttachments = it.pendingAttachments + attachment) }
+    }
+
+    /** No-op if [id] doesn't match anything currently pending (e.g. a stale UI callback after the
+     * list already changed) -- safe to call unconditionally. */
+    fun removePendingAttachment(id: String) {
+        _uiState.update { it.copy(pendingAttachments = it.pendingAttachments.filterNot { attachment -> attachment.id == id }) }
+    }
+
+    /** The composer's real attach-button entry point: reads [uri] via [attachmentFileReader], then
+     * uploads it through [performAttachmentUpload]. One upload at a time is enough for this MVP --
+     * a second tap while one is already in flight is a no-op rather than queued. No-ops with a
+     * "reconnect" error instead of calling the server at all when showing cached data offline,
+     * matching [cancelStream]'s and [selectComposerModel]'s existing pattern. */
+    fun uploadAttachment(uri: Uri) {
+        val state = _uiState.value
+        if (state.isUploadingAttachment) return
+        if (state.isShowingCachedData) {
+            _uiState.update { it.copy(errorMessage = "Reconnect to the server to upload attachments.") }
+            return
+        }
+        if (authRepository.apiForActiveServer() == null) {
+            _uiState.update { it.copy(errorMessage = "Not signed in.") }
+            return
+        }
+        viewModelScope.launch {
+            uploadAttachmentSuspend(uri)
+        }
+    }
+
+    /** Suspend variant that completes when the single upload is done. Shared between
+     * [uploadAttachment] (which launches it in a coroutine) and [uploadAttachmentsSequentially]
+     * (which calls it in a loop). */
+    private suspend fun uploadAttachmentSuspend(uri: Uri) {
+        _uiState.update { it.copy(isUploadingAttachment = true, errorMessage = null) }
+        when (val result = attachmentFileReader.read(uri)) {
+            is AttachmentReadResult.TooLarge -> _uiState.update {
+                it.copy(
+                    isUploadingAttachment = false,
+                    errorMessage = "${result.name} is too large. Attachments must be 20 MB or smaller.",
+                )
+            }
+            AttachmentReadResult.Unreadable -> _uiState.update {
+                it.copy(isUploadingAttachment = false, errorMessage = "Could not read the selected file.")
+            }
+            is AttachmentReadResult.Success -> performAttachmentUpload(result.file)
+        }
+    }
+
+    /**
+     * Uploads multiple shared files sequentially. Each file is read, uploaded to the server, and
+     * staged as a pending attachment before the next one starts. A single file failure (too large,
+     * unreadable, server error) does not block the remaining files -- it surfaces an error message
+     * and continues. Does not auto-send; the user must tap Send to dispatch.
+     */
+    fun uploadAttachmentsSequentially(uris: List<Uri>) {
+        if (uris.isEmpty()) return
+        if (_uiState.value.isShowingCachedData) {
+            _uiState.update { it.copy(errorMessage = "Reconnect to the server to upload attachments.") }
+            return
+        }
+        if (authRepository.apiForActiveServer() == null) {
+            _uiState.update { it.copy(errorMessage = "Not signed in.") }
+            return
+        }
+        viewModelScope.launch {
+            for (uri in uris) {
+                uploadAttachmentSuspend(uri)
+                // Wait for the current upload to settle before moving to the next
+                _uiState.first { !it.isUploadingAttachment }
+            }
+        }
+    }
+
+    /** The actual `/api/upload` call and the state fold-in -- split out from [uploadAttachment] so
+     * tests can exercise this network/state logic directly with a plain [AttachmentFile], without
+     * ever needing a real `android.net.Uri` (see [AttachmentFileReader]'s doc). `internal` rather
+     * than `private` for exactly that reason. Sets [ChatUiState.isUploadingAttachment] itself
+     * (redundantly true if [uploadAttachment] already set it while reading the file) so it's
+     * fully self-contained for a test calling it directly. */
+    internal suspend fun performAttachmentUpload(file: AttachmentFile) {
+        _uiState.update { it.copy(isUploadingAttachment = true, errorMessage = null) }
+        val api = authRepository.apiForActiveServer()
+        if (api == null) {
+            _uiState.update { it.copy(isUploadingAttachment = false, errorMessage = "Not signed in.") }
+            return
+        }
+        try {
+            val response = safeApiCall {
+                api.uploadAttachment(
+                    sessionId = sessionId.toRequestBody(),
+                    file = MultipartBody.Part.createFormData(
+                        "file",
+                        file.name,
+                        file.bytes.toRequestBody((file.mime ?: "application/octet-stream").toMediaTypeOrNull()),
+                    ),
+                )
+            }
+            // Fold the response into pendingAttachments/errorMessage *before* clearing the busy
+            // flag -- these are two separate _uiState.update calls, and a collector watching for
+            // "upload settled" (isUploadingAttachment turning false) must never observe that
+            // ahead of the attachment it was actually waiting on actually showing up.
+            addUploadedAttachment(response)
+            _uiState.update { it.copy(isUploadingAttachment = false) }
+        } catch (e: ApiError) {
+            _uiState.update { it.copy(isUploadingAttachment = false, errorMessage = e.message ?: "Could not upload the attachment.") }
+        }
+    }
+
+    /** Picking a profile from the composer selector. An empty transcript just switches the
+     * server's active profile in place; once messages exist, switching profiles instead offers
+     * to start a fresh session on that profile (see [pendingProfileSwitch] and
+     * [confirmPendingProfileSwitch]), matching iOS. */
+    fun selectProfile(name: String) {
+        val state = _uiState.value
+        if (name == state.selectedProfileName || state.isSwitchingProfile) return
+        if (state.messages.isEmpty()) {
+            performProfileSwitch(name)
+        } else {
+            _uiState.update { it.copy(pendingProfileSwitch = name) }
+        }
+    }
+
+    fun dismissPendingProfileSwitch() {
+        _uiState.update { it.copy(pendingProfileSwitch = null) }
+    }
+
+    /** Confirms starting a new session on [ChatUiState.pendingProfileSwitch]'s profile. Switches
+     * the server's active profile, creates a new session on it, and hands the new session id to
+     * [onNewSession] so the caller can navigate there -- this view model has no navigation
+     * authority of its own. */
+    fun confirmPendingProfileSwitch(onNewSession: (String) -> Unit) {
+        val name = _uiState.value.pendingProfileSwitch ?: return
+        val api = authRepository.apiForActiveServer()
+        if (api == null) {
+            _uiState.update { it.copy(pendingProfileSwitch = null, errorMessage = "Not signed in.") }
+            return
+        }
+        viewModelScope.launch {
+            _uiState.update { it.copy(pendingProfileSwitch = null, isSwitchingProfile = true, errorMessage = null) }
+            try {
+                safeApiCall { api.switchProfile(ProfileSwitchRequest(name)) }
+                val sessionResponse = safeApiCall { api.newSession(NewSessionRequest(profile = name)) }
+                val newSessionId = sessionResponse.session?.sessionId
+                _uiState.update { it.copy(isSwitchingProfile = false, selectedProfileName = name) }
+                if (newSessionId != null) {
+                    onNewSession(newSessionId)
+                } else {
+                    _uiState.update { it.copy(errorMessage = "Server did not return a session id.") }
+                }
+            } catch (e: ApiError) {
+                _uiState.update {
+                    it.copy(isSwitchingProfile = false, errorMessage = e.message ?: "Could not switch profile.")
+                }
+            }
+        }
+    }
+
+    private fun performProfileSwitch(name: String) {
+        val api = authRepository.apiForActiveServer() ?: return
+        viewModelScope.launch {
+            _uiState.update { it.copy(isSwitchingProfile = true, errorMessage = null) }
+            try {
+                val response = safeApiCall { api.switchProfile(ProfileSwitchRequest(name)) }
+                if (response.error != null) {
+                    _uiState.update { it.copy(isSwitchingProfile = false, errorMessage = response.error) }
+                } else {
+                    _uiState.update {
+                        it.copy(
+                            isSwitchingProfile = false,
+                            profileOptions = response.profiles ?: it.profileOptions,
+                            selectedProfileName = response.active ?: name,
+                        )
+                    }
+                }
+            } catch (e: ApiError) {
+                _uiState.update {
+                    it.copy(isSwitchingProfile = false, errorMessage = e.message ?: "Could not switch profile.")
+                }
+            }
+        }
+    }
+
+    fun sendMessage() {
+        val stateAtTap = _uiState.value
+        val originalComposerText = stateAtTap.composerText
+        val text = originalComposerText.trim()
+        if (text.isEmpty() || stateAtTap.isSending) return
+
+        // During streaming, sending triggers steer instead of a new message
+        if (stateAtTap.isStreaming) {
+            steer(text)
+            _uiState.update { it.copy(composerText = "") }
+            return
+        }
+
+        // Handle slash commands before sending
+        val matchResult = CommandRegistry.matchCommand(text)
+        if (matchResult != null) {
+            val (cmd, argument) = matchResult
+            if (cmd.action != null) {
+                executeCommand(cmd.action, argument)
+            } else if (argument.isNotBlank()) {
+                // Commands without a specific action but with an argument send it as a message
+                _uiState.update { it.copy(composerText = argument) }
+            }
+            return
+        }
+
+        val api = authRepository.apiForActiveServer()
+        val serverBaseUrl = authRepository.activeServerBaseUrl()
+        if (api == null || serverBaseUrl == null) {
+            _uiState.update { it.copy(errorMessage = "Not signed in.") }
+            return
+        }
+
+        // Armed here, not from the UI layer: sendMessage() is the one function every send-shaped
+        // entry point (normal send, regenerate, retryLastMessage, the slash-command re-entry
+        // below) funnels through, so this is the single place a fresh turn can start -- see
+        // TtftTracer's class doc for why that matters for regenerate/retry not attaching to a
+        // stale trace. Compose's onClick invokes this synchronously off the tap, so "Send tapped"
+        // here is indistinguishable from the true tap instant.
+        TtftTracer.start()
+        TtftTracer.mark("ViewModel begins processing")
+
+        // Capture and render the turn before any network suspension. `/api/chat/start` can take
+        // noticeably longer for an old session, but that server acknowledgement is not what
+        // makes a user action "sent" from the UI's perspective. The WebUI follows the same
+        // ordering: clear the submitted draft and append the local user turn first, then roll it
+        // back if the start request is rejected.
+        val explicitModelPick = stateAtTap.pendingExplicitModelPick && !stateAtTap.currentModel.isNullOrBlank()
+        TtftTracer.mark("Request serialization begins")
+        val cappedAttachments = stateAtTap.pendingAttachments.map { it.toMessageAttachment() }.capAtChatStartLimit()
+        val attachmentReferences = cappedAttachments.mapNotNull { it.chatReference() }
+        val messageForApi = text + buildAttachedFilesMarker(attachmentReferences)
+        val chatStartRequest = ChatStartRequest(
+            sessionId = sessionId,
+            message = messageForApi,
+            workspace = stateAtTap.currentWorkspace,
+            model = stateAtTap.currentModel,
+            modelProvider = stateAtTap.currentModelProvider?.takeIf { it.isNotBlank() },
+            profile = stateAtTap.selectedProfileName?.takeIf { it.isNotBlank() },
+            explicitModelPick = if (explicitModelPick) true else null,
+            attachments = cappedAttachments.ifEmpty { null },
+        )
+        TtftTracer.mark("Request serialization ends")
+        val optimisticUserMessage = ChatMessage(
+            role = "user",
+            content = messageForApi,
+            timestamp = nowEpochSeconds(),
+            attachments = cappedAttachments.ifEmpty { null },
+        )
+        _uiState.update {
+            it.copy(
+                isSending = true,
+                errorMessage = null,
+                composerText = "",
+                messages = it.messages + optimisticUserMessage,
+                pendingAttachments = emptyList(),
+            )
+        }
+
+        viewModelScope.launch {
+            // Issue #10: if a server cancel is still in flight (e.g. user tapped Stop then Send
+            // quickly), wait for it to complete before issuing chat/start -- otherwise the start
+            // can race the cancel and get a 409 "session already has an active stream" back.
+            awaitPendingCancel()
+
+            val startResponse = try {
+                // Up to 2 attempts: the first is the normal start; if the server still has a
+                // stale stream from a previous (raced) cancel, give it a brief moment to release
+                // the slot and retry once. A second 409 is treated as a real user-facing error
+                // because it means the server is genuinely still holding the session.
+                var attempt = 0
+                var response: ChatStartResponse? = null
+                while (response == null) {
+                    try {
+                        response = safeApiCall { api.chatStart(chatStartRequest) }
+                    } catch (e: ApiError.StreamConflict) {
+                        attempt++
+                        if (attempt > 1) throw e
+                        HermexLog.w(
+                            "Chat",
+                            "chat/start 409: server still has active stream (${e.activeStreamId}); waiting for release",
+                        )
+                        // Brief wait for the server's view of the slot to clear (up to ~4s).
+                        // If it clears, the retry wins; if not, the next iteration throws and
+                        // the catch below surfaces a clear message.
+                        val released = awaitServerStreamRelease()
+                        if (!released) throw e
+                    }
+                }
+                response
+            } catch (e: ApiError.StreamConflict) {
+                // After 2 attempts: a 409 from chat/start means the server has a stream we don't
+                // know how to claim. Surface a clear "Previous stream is still stopping" message
+                // rather than the raw API error -- the user knows to wait a moment and retry.
+                rollbackOptimisticSend(
+                    optimisticUserMessage,
+                    originalComposerText,
+                    stateAtTap.pendingAttachments,
+                    "Previous stream is still stopping. Please wait a moment and tap Send again.",
+                )
+                return@launch
+            } catch (e: ApiError.Network) {
+                rollbackOptimisticSend(
+                    optimisticUserMessage,
+                    originalComposerText,
+                    stateAtTap.pendingAttachments,
+                    "You're offline. Reconnect to send messages.",
+                )
+                return@launch
+            } catch (e: ApiError) {
+                rollbackOptimisticSend(
+                    optimisticUserMessage,
+                    originalComposerText,
+                    stateAtTap.pendingAttachments,
+                    e.message ?: "Could not send message.",
+                )
+                return@launch
+            }
+
+            val streamId = startResponse.streamId
+            if (streamId == null) {
+                HermexLog.w("Chat", "chat/start returned no stream_id: ${startResponse.error}")
+                rollbackOptimisticSend(
+                    optimisticUserMessage,
+                    originalComposerText,
+                    stateAtTap.pendingAttachments,
+                    startResponse.error ?: "Server did not start a stream.",
+                )
+                return@launch
+            }
+            HermexLog.d("Chat", "chat/start ok, streamId=$streamId -- opening SSE")
+
+            _uiState.update {
+                it.copy(
+                    isSending = false,
+                    isStreaming = true,
+                    streamingText = "",
+                    streamingReasoning = "",
+                    // NOT resetting activeToolCalls here: each entry is anchored to the message
+                    // index it belongs to (see ToolCallUi.anchorMessageCount / ChatScreen), so
+                    // past turns' tool cards must persist across a new send to stay visible in
+                    // their correct position in the transcript.
+                    pendingExplicitModelPick = if (explicitModelPick) false else it.pendingExplicitModelPick,
+                )
+            }
+
+            _uiState.update { it.copy(hasDisconnectedStream = false, disconnectedStreamId = null) }
+            activeStreamId = streamId
+            observeStream(serverBaseUrl, streamId)
+        }
+    }
+
+    /** Removes one locally-rendered turn and restores the exact submitted draft after
+     * `/api/chat/start` fails. The composer is disabled while [ChatUiState.isSending], so the
+     * normal path always restores into an empty field. The blank check is still defensive: a
+     * programmatic draft staged during the request must not be overwritten by a stale failure. */
+    private fun rollbackOptimisticSend(
+        optimisticMessage: ChatMessage,
+        originalComposerText: String,
+        originalAttachments: List<PendingAttachmentUi>,
+        errorMessage: String,
+    ) {
+        TtftTracer.finish()
+        _uiState.update { state ->
+            state.copy(
+                isSending = false,
+                composerText = if (state.composerText.isEmpty()) originalComposerText else state.composerText,
+                // Remove only the exact object appended for this attempt. A synthetic stableId
+                // can theoretically collide with an older same-content message.
+                messages = state.messages.filterNot { it === optimisticMessage },
+                pendingAttachments = (originalAttachments + state.pendingAttachments).distinctBy { it.id },
+                errorMessage = errorMessage,
+            )
+        }
+    }
+
+    private fun observeStream(serverBaseUrl: String, streamId: String) {
+        // Release the previous stream's foreground service claim before cancelling it.
+        // sendMessage used to call onStreamStarted() itself but that raced with the
+        // cancellation below -- the old stream's coroutine never finalizes, so
+        // onStreamStopped() was never called and the AtomicBoolean stayed true, starving
+        // the new stream's start.  Placing both stop and start here in the right order
+        // ensures the controller always mirrors the active stream.
+        streamingForegroundController.onStreamStopped()
+        streamJob?.cancel()
+        streamingForegroundController.onStreamStarted()
+        streamJob = viewModelScope.launch {
+            try {
+                sseClient.stream(chatStreamUrl(serverBaseUrl, streamId)).collect(::handleEvent)
+            } finally {
+                // Safety net: if the SSE connection closes cleanly without any terminal
+                // SSE event (done/stream_end/cancel/error), collect() returns normally
+                // and finalizeStream() would never be called.  The isStreaming guard
+                // prevents double-finalization when handleEvent already called it.
+                if (_uiState.value.isStreaming) {
+                    finalizeStream(reason = StreamCompletionReason.NORMAL)
+                }
+            }
+        }
+    }
+
+    private fun handleEvent(event: SseEvent) {
+        when (event) {
+            is SseEvent.Token -> {
+                // Logged once per turn, not per token -- streamingText is empty only for the very
+                // first token, so this can't fire again until the next finalizeStream resets it.
+                if (_uiState.value.streamingText.isEmpty()) {
+                    HermexLog.d("Chat", "first token received")
+                    TtftTracer.markOnce("First content token parsed")
+                }
+                _uiState.update { it.copy(streamingText = it.streamingText + event.text) }
+            }
+            is SseEvent.Reasoning -> _uiState.update { it.copy(streamingReasoning = it.streamingReasoning + event.text) }
+            is SseEvent.ToolStarted -> upsertToolCall(event.payload, completed = false)
+            is SseEvent.ToolCompleted -> upsertToolCall(event.payload, completed = true)
+            is SseEvent.Done -> {
+                HermexLog.d("Chat", "event: done")
+                finalizeStream(reason = StreamCompletionReason.NORMAL)
+            }
+            SseEvent.StreamEnd -> {
+                HermexLog.d("Chat", "event: stream_end")
+                finalizeStream(reason = StreamCompletionReason.NORMAL)
+            }
+            SseEvent.Cancelled -> finalizeStream(reason = StreamCompletionReason.CANCELLED)
+            is SseEvent.Error -> finalizeStream(errorMessage = event.message, reason = StreamCompletionReason.ERROR)
+            is SseEvent.TransportError -> finalizeStream(errorMessage = event.message, reason = StreamCompletionReason.ERROR)
+            // Unrecognized event names, or a heartbeat/no-op the parser already swallowed --
+            // never surfaced to the UI.
+            SseEvent.Unknown -> Unit
+        }
+    }
+
+    private fun upsertToolCall(payload: ToolEventPayload, completed: Boolean) {
+        // A tool event with no identifiable id at all can't be tracked or later matched to its
+        // completion -- dropping it silently is safer than crashing or corrupting another card.
+        val stableId = payload.stableId ?: return
+        _uiState.update { state ->
+            val existingIndex = state.activeToolCalls.indexOfFirst { it.stableId == stableId }
+            val merged = if (existingIndex >= 0) {
+                val existing = state.activeToolCalls[existingIndex]
+                existing.copy(
+                    name = payload.name ?: existing.name,
+                    preview = payload.preview ?: existing.preview,
+                    isComplete = completed,
+                    isError = payload.isError ?: existing.isError,
+                    durationSeconds = payload.duration ?: existing.durationSeconds,
+                    rawArgs = payload.args?.let { kotlinx.serialization.json.Json { prettyPrint = true }.encodeToString(kotlinx.serialization.json.JsonElement.serializer(), it) } ?: existing.rawArgs,
+                )
+            } else {
+                ToolCallUi(
+                    stableId = stableId,
+                    name = payload.name,
+                    preview = payload.preview,
+                    isComplete = completed,
+                    isError = payload.isError ?: false,
+                    durationSeconds = payload.duration,
+                    rawArgs = payload.args?.let { kotlinx.serialization.json.Json { prettyPrint = true }.encodeToString(kotlinx.serialization.json.JsonElement.serializer(), it) },
+                    anchorMessageCount = state.messages.size,
+                )
+            }
+            val updatedList = if (existingIndex >= 0) {
+                state.activeToolCalls.toMutableList().apply { set(existingIndex, merged) }
+            } else {
+                state.activeToolCalls + merged
+            }
+            state.copy(activeToolCalls = updatedList)
+        }
+    }
+
+    /** Finalizes the in-flight assistant message (if any) into [ChatUiState.messages], clears
+     * the streaming buffers, and stops the stream. Called on every terminal SSE event
+     * (done/stream_end/cancel/error) and on a local cancel -- always reachable exactly once per
+     * turn since [streamJob] is cancelled here too, so a late event after finalize is a no-op.
+     * Fires the [responseCompletionNotifier] after state update so it observes the final UI state. */
+    private fun finalizeStream(errorMessage: String? = null, reason: StreamCompletionReason = StreamCompletionReason.CANCELLED) {
+        HermexLog.d("Chat", "finalizeStream" + (errorMessage?.let { " (error: $it)" } ?: ""))
+        // Single terminal point for done/stream_end/cancel/error alike -- disarming the TTFT
+        // trace here (rather than separately per reason) guarantees no late/unrelated event can
+        // log a mark against this turn's timer after it's genuinely over.
+        TtftTracer.finish()
+        // Set isStreaming=false BEFORE cancelling streamJob so any synchronous
+        // CancellationException that unwinds through the try/finally block in
+        // observeStream sees the final state and does not double-finalize.
+        _uiState.update { state ->
+            val hasPartialReply = state.streamingText.isNotEmpty() || state.streamingReasoning.isNotEmpty()
+            val finalizedMessages = if (hasPartialReply) {
+                state.messages + ChatMessage(
+                    role = "assistant",
+                    content = state.streamingText.ifEmpty { null },
+                    reasoning = state.streamingReasoning.ifEmpty { null },
+                    timestamp = nowEpochSeconds(),
+                )
+            } else {
+                state.messages
+            }
+            state.copy(
+                messages = finalizedMessages,
+                streamingText = "",
+                streamingReasoning = "",
+                isStreaming = false,
+                errorMessage = errorMessage ?: state.errorMessage,
+                pendingApproval = null,
+                isRespondingToApproval = false,
+                approvalErrorMessage = null,
+                pendingClarification = null,
+                isRespondingToClarification = false,
+                clarificationErrorMessage = null,
+            )
+        }
+        HermexLog.d("Chat", "isRunning=false messages=${_uiState.value.messages.size}")
+        streamJob?.cancel()
+        streamJob = null
+        activeStreamId = null
+        approvalPollingJob?.cancel()
+        approvalPollingJob = null
+        clarificationPollingJob?.cancel()
+        clarificationPollingJob = null
+        refreshCacheInBackground()
+        if (reason == StreamCompletionReason.NORMAL) {
+            responseCompletionNotifier.onResponseCompleted(sessionId, completedNormally = true)
+        }
+        streamingForegroundController.onStreamStopped()
+    }
+
+    /** Re-fetches this session's detail from the network and caches *that* -- deliberately never
+     * writes the locally-finalized [ChatUiState] (streamed text, the optimistic user message)
+     * directly into the offline cache, so a partial/synthetic reply can never end up stored as if
+     * it were final. Silent: the turn has already finished from the user's point of view, so a
+     * failed background refresh here isn't worth surfacing as an error. */
+    private fun refreshCacheInBackground() {
+        val serverId = authRepository.activeServerId() ?: return
+        val api = authRepository.apiForActiveServer() ?: return
+        viewModelScope.launch {
+            val session = runCatching { safeApiCall { api.session(sessionId = sessionId, messages = 1, msgLimit = 50) } }
+                .getOrNull()?.session ?: return@launch
+            offlineCacheRepository.cacheSessionDetail(serverId, sessionId, session)
+        }
+    }
+
+    fun startApprovalPolling(sessionId: String) {
+        approvalPollingJob?.cancel()
+        approvalPollingJob = viewModelScope.launch {
+            while (isActive) {
+                delay(2000L)
+                try {
+                    val api = authRepository.apiForActiveServer() ?: break
+                    val response = safeApiCall { api.approvalPending(sessionId) }
+                    val pending = response.pending
+                    if (pending != null && !pending.approvalId.isNullOrBlank()) {
+                        _uiState.update { it.copy(
+                            pendingApproval = PendingApprovalUi(
+                                approvalId = pending.approvalId,
+                                command = pending.command,
+                                description = pending.description,
+                                patternKeys = (pending.patternKeys ?: pending.patternKey?.let { listOf(it) } ?: emptyList()),
+                                pendingCount = response.pendingCount,
+                            ),
+                            approvalErrorMessage = null,
+                        )}
+                    } else {
+                        _uiState.update { it.copy(pendingApproval = null) }
+                    }
+                } catch (_: Exception) {
+                    // Polling failures are non-fatal.
+                }
+            }
+        }
+    }
+
+    fun startClarificationPolling(sessionId: String) {
+        clarificationPollingJob?.cancel()
+        clarificationPollingJob = viewModelScope.launch {
+            while (isActive) {
+                delay(2000L)
+                try {
+                    val api = authRepository.apiForActiveServer() ?: break
+                    val response = safeApiCall { api.clarifyPending(sessionId) }
+                    val pending = response.pending
+                    if (pending != null && !pending.clarifyId.isNullOrBlank()) {
+                        _uiState.update { it.copy(
+                            pendingClarification = PendingClarificationUi(
+                                clarifyId = pending.clarifyId,
+                                question = pending.question ?: "The agent needs more information.",
+                                choices = pending.choicesOffered?.filter { it.isNotBlank() } ?: emptyList(),
+                                sessionId = pending.sessionId,
+                                timeoutSeconds = pending.timeoutSeconds,
+                                expiresAt = pending.expiresAt,
+                                pendingCount = response.pendingCount ?: 1,
+                            ),
+                            clarificationErrorMessage = null,
+                        )}
+                    } else {
+                        _uiState.update { it.copy(pendingClarification = null) }
+                    }
+                } catch (_: Exception) {
+                    // Non-fatal.
+                }
+            }
+        }
+    }
+
+    fun respondToApproval(choice: String) {
+        val approval = _uiState.value.pendingApproval ?: return
+        val sessionId = currentSessionId
+        _uiState.update { it.copy(isRespondingToApproval = true, approvalErrorMessage = null) }
+        viewModelScope.launch {
+            try {
+                val api = authRepository.apiForActiveServer()
+                if (api == null) {
+                    _uiState.update { it.copy(isRespondingToApproval = false, approvalErrorMessage = "Not signed in.") }
+                    return@launch
+                }
+                safeApiCall {
+                    api.approvalRespond(ApprovalRespondRequest(
+                        sessionId = sessionId,
+                        choice = choice,
+                        approvalId = approval.approvalId,
+                    ))
+                }
+                _uiState.update { it.copy(pendingApproval = null, isRespondingToApproval = false) }
+            } catch (e: ApiError) {
+                _uiState.update { it.copy(
+                    isRespondingToApproval = false,
+                    approvalErrorMessage = e.message ?: "Could not respond.",
+                )}
+            }
+        }
+    }
+
+    fun skipAllApprovals() {
+        val sessionId = currentSessionId
+        _uiState.update { it.copy(isRespondingToApproval = true, approvalErrorMessage = null) }
+        viewModelScope.launch {
+            try {
+                val api = authRepository.apiForActiveServer()
+                if (api == null) {
+                    _uiState.update { it.copy(isRespondingToApproval = false, approvalErrorMessage = "Not signed in.") }
+                    return@launch
+                }
+                safeApiCall {
+                    api.sessionYoloSet(SessionYoloRequest(sessionId = sessionId, enabled = true))
+                }
+                _uiState.update { it.copy(
+                    pendingApproval = null,
+                    isRespondingToApproval = false,
+                    isSessionApprovalBypassEnabled = true,
+                )}
+            } catch (e: ApiError) {
+                _uiState.update { it.copy(
+                    isRespondingToApproval = false,
+                    approvalErrorMessage = e.message ?: "Could not skip approvals.",
+                )}
+            }
+        }
+    }
+
+    fun respondToClarification(response: String) {
+        val clarification = _uiState.value.pendingClarification ?: return
+        val sessionId = currentSessionId
+        val trimmed = response.trim()
+        if (trimmed.isEmpty()) return
+        _uiState.update { it.copy(isRespondingToClarification = true, clarificationErrorMessage = null) }
+        viewModelScope.launch {
+            try {
+                val api = authRepository.apiForActiveServer()
+                if (api == null) {
+                    _uiState.update { it.copy(isRespondingToClarification = false, clarificationErrorMessage = "Not signed in.") }
+                    return@launch
+                }
+                safeApiCall {
+                    api.clarifyRespond(ClarificationRespondRequest(
+                        sessionId = sessionId,
+                        response = trimmed,
+                        clarifyId = clarification.clarifyId,
+                    ))
+                }
+                _uiState.update { it.copy(pendingClarification = null, isRespondingToClarification = false) }
+            } catch (e: ApiError) {
+                _uiState.update { it.copy(
+                    isRespondingToClarification = false,
+                    clarificationErrorMessage = e.message ?: "Could not respond.",
+                )}
+            }
+        }
+    }
+
+    fun dismissError() {
+        _uiState.update { it.copy(errorMessage = null) }
+    }
+
+    fun renameSession(sessionId: String, newTitle: String) {
+        viewModelScope.launch {
+            try {
+                val api = authRepository.apiForActiveServer() ?: throw ApiError.Network(Exception("Not signed in"))
+                safeApiCall { api.renameSession(SessionRenameRequest(sessionId, newTitle)) }
+            } catch (e: Exception) {
+                _uiState.update { it.copy(errorMessage = e.message ?: "Could not rename session.") }
+            }
+        }
+    }
+
+    /** Loads the projects available for this screen's own "Move to Project" dialog -- the same
+     * `api.projects()` call [com.peditx.hermex.sessions.SessionListViewModel.loadProjects] makes
+     * for its copy of the dialog. Called on demand when the menu item opens (see
+     * [com.peditx.hermex.chat.ChatScreen]), not eagerly at session load, since most chat visits
+     * never open it. A failure just leaves the picker showing "No project" ([ChatUiState.projects]
+     * stays empty) rather than blocking the rest of the screen. */
+    fun loadProjects() {
+        viewModelScope.launch {
+            val api = authRepository.apiForActiveServer()
+            if (api == null) {
+                _uiState.update { it.copy(isLoadingProjects = false, projectsErrorMessage = "Not signed in.") }
+                return@launch
+            }
+            _uiState.update { it.copy(isLoadingProjects = true, projectsErrorMessage = null) }
+            try {
+                val response = safeApiCall { api.projects() }
+                _uiState.update {
+                    it.copy(isLoadingProjects = false, projects = response.projects.orEmpty(), projectsErrorMessage = null)
+                }
+            } catch (e: ApiError) {
+                _uiState.update { it.copy(isLoadingProjects = false, projectsErrorMessage = e.message ?: "Could not load projects.") }
+            }
+        }
+    }
+
+    /** Moves (or, with a null [projectId], removes) *this* session's project assignment via the
+     * same `/api/session/project` endpoint [com.peditx.hermex.sessions.SessionListViewModel.moveSessionToProject]
+     * uses. Unlike that ViewModel's own list-owning version, this updates [ChatUiState.currentProjectId]
+     * directly from the call that just succeeded rather than re-fetching the whole session --
+     * there's no list here to keep in sync, just this one session's own state, matching how
+     * [selectComposerModel] already applies its own response in place. */
+    fun moveSessionToProject(projectId: String?) {
+        viewModelScope.launch {
+            try {
+                val api = authRepository.apiForActiveServer() ?: throw ApiError.Network(Exception("Not signed in"))
+                safeApiCall { api.moveSessionToProject(SessionProjectRequest(sessionId, projectId)) }
+                _uiState.update { it.copy(currentProjectId = projectId) }
+            } catch (e: Exception) {
+                _uiState.update { it.copy(errorMessage = e.message ?: "Could not move session.") }
+            }
+        }
+    }
+
+    fun regenerate() {
+        val messages = _uiState.value.messages
+        if (messages.size < 2) return
+        val lastMessage = messages.lastOrNull() ?: return
+        if (lastMessage.role == "user") return
+        viewModelScope.launch {
+            try {
+                val api = authRepository.apiForActiveServer() ?: throw ApiError.Network(Exception("Not signed in"))
+                // Issue #10: if a stream is still in flight, we must stop it (and wait for the
+                // server to release the session slot) before truncating or starting a new one.
+                // The UI disables the regenerate action while streaming, but a tap just after
+                // the user hit Stop can still race the cancel POST.
+                if (activeStreamId != null) cancelStream()
+                awaitPendingCancel()
+                val keepCount = messages.size - 1
+                safeApiCall { api.truncateSession(TruncateSessionRequest(session_id = sessionId, keep_count = keepCount)) }
+                val lastUserText = messages.dropLast(1).lastOrNull()?.content ?: return@launch
+                _uiState.update { it.copy(messages = it.messages.dropLast(1), composerText = lastUserText) }
+                sendMessage()
+            } catch (e: ApiError) {
+                _uiState.update { it.copy(errorMessage = e.message ?: "Could not regenerate.") }
+            }
+        }
+    }
+
+    /** Edit a past user message: truncates the session (server + local) back to just before
+     * [index] and pre-fills the composer with that message's original text, so the subsequent
+     * Send replaces it (and everything after it) instead of appending a duplicate at the end. */
+    fun editMessage(index: Int) {
+        val message = _uiState.value.messages.getOrNull(index) ?: return
+        if (message.role != "user") return
+        val text = message.content ?: return
+        viewModelScope.launch {
+            try {
+                val api = authRepository.apiForActiveServer() ?: throw ApiError.Network(Exception("Not signed in"))
+                // Issue #10: see [regenerate] -- an in-flight stream must be cancelled (and the
+                // cancel awaited) before we can safely truncate the session.
+                if (activeStreamId != null) cancelStream()
+                awaitPendingCancel()
+                safeApiCall { api.truncateSession(TruncateSessionRequest(session_id = sessionId, keep_count = index)) }
+                _uiState.update { it.copy(messages = it.messages.take(index), composerText = text) }
+            } catch (e: ApiError) {
+                _uiState.update { it.copy(errorMessage = e.message ?: "Could not edit message.") }
+            }
+        }
+    }
+
+    /** Edit with sheet: shows the edit sheet, then truncates and resends. */
+    fun editMessageWithSheet(index: Int, newText: String) {
+        val message = _uiState.value.messages.getOrNull(index) ?: return
+        if (message.role != "user") return
+        if (newText.isBlank()) return
+        viewModelScope.launch {
+            try {
+                val api = authRepository.apiForActiveServer() ?: throw ApiError.Network(Exception("Not signed in"))
+                if (activeStreamId != null) cancelStream()
+                awaitPendingCancel()
+                safeApiCall { api.truncateSession(TruncateSessionRequest(session_id = sessionId, keep_count = index)) }
+                _uiState.update { it.copy(messages = it.messages.take(index), composerText = newText) }
+                // Auto-send the edited message
+                sendMessage()
+            } catch (e: ApiError) {
+                _uiState.update { it.copy(errorMessage = e.message ?: "Could not edit message.") }
+            }
+        }
+    }
+
+    fun retryLastMessage() {
+        val messages = _uiState.value.messages
+        val lastUserIdx = messages.indexOfLast { it.role == "user" }
+        if (lastUserIdx < 0) return
+        val lastUserText = messages[lastUserIdx].content.orEmpty()
+        viewModelScope.launch {
+            try {
+                val api = authRepository.apiForActiveServer() ?: throw ApiError.Network(Exception("Not signed in"))
+                // Issue #10: same lifecycle ordering as regenerate/edit.
+                if (activeStreamId != null) cancelStream()
+                awaitPendingCancel()
+                val keepCount = lastUserIdx
+                safeApiCall { api.truncateSession(TruncateSessionRequest(session_id = sessionId, keep_count = keepCount)) }
+                _uiState.update { it.copy(messages = it.messages.take(keepCount), composerText = lastUserText) }
+                sendMessage()
+            } catch (e: ApiError) {
+                _uiState.update { it.copy(errorMessage = e.message ?: "Could not retry.") }
+            }
+        }
+    }
+
+    /** Stop button. Fires a cancel request to the server, and finalizes locally immediately
+     * rather than waiting for a `cancel` event to arrive on the stream, so the UI feels instant.
+     * The local finalize happens either way (matching iOS -- a stuck "stop" button that keeps
+     * waiting on a flaky server is worse than a possibly-still-running server turn the user can
+     * no longer see); a failed cancel just surfaces an error afterward without reopening the
+     * stream or touching [ChatUiState.messages]. No-ops with a "reconnect" error instead of
+     * calling the server at all when showing cached data offline -- see [ChatUiState.isShowingCachedData].
+     *
+     * The server cancel is tracked in [cancelJob] and awaited by [sendMessage], [regenerate],
+     * [editMessage], and [retryLastMessage] so a tight "stop then send" can't race the cancel and
+     * hit a 409. (Issue #10.) */
+    fun reattachStream() {
+        val streamId = _uiState.value.disconnectedStreamId ?: return
+        val serverBaseUrl = authRepository.activeServerBaseUrl() ?: return
+        // Reattach has no "send tapped" moment of its own -- this stream's turn started
+        // elsewhere (a previous process, a previous screen), so there's nothing meaningful to
+        // measure a TTFT against here. Disarm defensively so the SSE events this is about to
+        // observe can't get misattributed to whatever unrelated turn last called
+        // TtftTracer.start().
+        TtftTracer.finish()
+        // isStreaming must be set true here (sendMessage's equivalent is line ~647) -- the
+        // clean-EOF safety net in observeStream()'s finally block only finalizes when
+        // isStreaming is true, and without this a reattached stream that ends without a
+        // terminal SSE event would leak the foreground service and never finalize.
+        _uiState.update { it.copy(isReattaching = true, hasDisconnectedStream = false, isStreaming = true) }
+        activeStreamId = streamId
+        observeStream(serverBaseUrl, streamId)
+        _uiState.update { it.copy(isReattaching = false) }
+    }
+
+    fun cancelStream() {
+        if (_uiState.value.isShowingCachedData) {
+            _uiState.update { it.copy(errorMessage = "Reconnect to control this run.") }
+            return
+        }
+        val streamId = activeStreamId ?: return
+        HermexLog.d("Chat", "cancelStream: streamId=$streamId")
+        val api = authRepository.apiForActiveServer()
+        if (api != null) {
+            // Track the cancel so the next send/edit/regenerate can wait for it (Issue #10).
+            // We surface isStopping to the UI so the composer can be disabled / show progress
+            // while the cancel is in flight, but the local finalize still happens immediately --
+            // the user can still keep typing.
+            _uiState.update { it.copy(isStopping = true) }
+            cancelJob?.cancel()
+            cancelJob = viewModelScope.launch {
+                try {
+                    val response = safeApiCall { api.chatCancel(streamId) }
+                    if (response.error != null) {
+                        HermexLog.w("Chat", "chat/cancel returned error: ${response.error}")
+                        _uiState.update { it.copy(errorMessage = response.error) }
+                    }
+                } catch (e: ApiError) {
+                    // A network/IO failure on the cancel POST doesn't unwind the local finalize
+                    // (the SSE is already gone), but the server may still be running the turn.
+                    // Surface a clear user-facing error so the user knows the server wasn't
+                    // notified -- matches pre-fix behavior asserted by ChatViewModelTest's
+                    // "cancelStream failure surfaces an error" test.
+                    HermexLog.w("Chat", "chat/cancel failed: ${e.message}")
+                    _uiState.update {
+                        it.copy(errorMessage = e.message ?: "Could not confirm the stop with the server.")
+                    }
+                } finally {
+                    _uiState.update { it.copy(isStopping = false) }
+                }
+            }
+        }
+        finalizeStream(reason = StreamCompletionReason.CANCELLED)
+    }
+
+    /** Suspends until any in-flight server cancel completes, so the calling operation (send,
+     * edit, regenerate, retry) can safely issue a follow-up `/api/chat/start` or
+     * `/api/session/truncate` without racing the cancel and hitting 409 (Issue #10). No-op if
+     * there is no pending cancel. */
+    private suspend fun awaitPendingCancel() {
+        val job = cancelJob ?: return
+        if (job.isActive) {
+            HermexLog.d("Chat", "awaiting in-flight server cancel before next request")
+            job.join()
+        }
+    }
+
+    /** Suspends until a previously cancelled stream is actually released by the server, up to
+     * [timeoutMs]. Polls the session detail endpoint for `activeStreamId == null` -- this is the
+     * authoritative signal that the server has finished its cleanup. Used by the 409 recovery
+     * path in [sendMessage] when reattach isn't appropriate (e.g. the conflict was on a stream
+     * the user just stopped, not one they want to rejoin). Returns true if the slot is free, false
+     * if the timeout elapsed with the server still holding the stream. */
+    private suspend fun awaitServerStreamRelease(timeoutMs: Long = 4_000L): Boolean {
+        val api = authRepository.apiForActiveServer() ?: return true
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (System.currentTimeMillis() < deadline) {
+            val stillActive: String? = try {
+                val resp: SessionResponse = safeApiCall { api.session(sessionId = sessionId, messages = 1, msgLimit = 1) }
+                resp.session?.activeStreamId
+            } catch (_: ApiError) { null }
+            if (stillActive.isNullOrBlank() || stillActive == activeStreamId) return true
+            kotlinx.coroutines.delay(150)
+        }
+        return false
+    }
+
+    /** TTS playback state */
+    private var ttsPlayer: MediaPlayer? = null
+    private var listeningMessageId: String? = null
+
+    /** Toggle TTS playback for a specific assistant message. */
+    fun toggleListen(messageIndex: Int) {
+        val message = _uiState.value.messages.getOrNull(messageIndex) ?: return
+        if (message.role != "assistant") return
+        val text = message.content ?: return
+
+        // If already listening to this message, stop
+        if (listeningMessageId == message.stableId) {
+            stopListening()
+            return
+        }
+
+        // Stop any current playback
+        stopListening()
+        listeningMessageId = message.stableId
+
+        viewModelScope.launch {
+            try {
+                val api = authRepository.apiForActiveServer() ?: throw ApiError.Network(Exception("Not signed in"))
+                // Call TTS endpoint - for now send as form body
+                val textPart = okhttp3.RequestBody.create(
+                    "text/plain".toMediaTypeOrNull(), text
+                )
+                val voicePart = okhttp3.RequestBody.create(
+                    "text/plain".toMediaTypeOrNull(), "default"
+                )
+                val responseBody = safeApiCall { api.tts(textPart, voicePart) }
+                
+                // Write response to temp file and play
+                val tempFile = File(context.cacheDir, "tts_${message.stableId}.mp3")
+                withContext(Dispatchers.IO) {
+                    tempFile.outputStream().use { out ->
+                        responseBody.byteStream().use { input ->
+                            input.copyTo(out)
+                        }
+                    }
+                }
+                
+                val mp = MediaPlayer().apply {
+                    setDataSource(tempFile.absolutePath)
+                    setOnCompletionListener {
+                        stopListening()
+                        tempFile.delete()
+                    }
+                    prepare()
+                    start()
+                }
+                ttsPlayer = mp
+            } catch (e: Exception) {
+                _uiState.update { it.copy(errorMessage = "TTS failed: ${e.message}") }
+                stopListening()
+            }
+        }
+    }
+
+    private fun stopListening() {
+        ttsPlayer?.release()
+        ttsPlayer = null
+        listeningMessageId = null
+    }
+
+    /** Upload a recorded voice note as an attachment and send it. */
+    fun sendVoiceNote(file: java.io.File, filename: String) {
+        viewModelScope.launch {
+            try {
+                val api = authRepository.apiForActiveServer() ?: throw ApiError.Network(Exception("Not signed in"))
+                val sessionIdPart = "text/plain".toRequestBody()
+                val filePart = MultipartBody.Part.createFormData(
+                    "file", filename,
+                    file.readBytes().toRequestBody("audio/m4a".toMediaTypeOrNull()),
+                )
+                val uploadResponse = safeApiCall { api.uploadAttachment(sessionIdPart, filePart) }
+                addUploadedAttachment(uploadResponse)
+                sendMessage()
+            } catch (e: Exception) {
+                _uiState.update { it.copy(errorMessage = "Voice note upload failed: ${e.message}") }
+            }
+        }
+    }
+
+    override fun onCleared() {
+        stopListening()
+        // App-retained ownership means this runs on logout/server switch/process teardown, not
+        // merely when the user switches to another chat destination.
+        streamJob?.cancel()
+        streamingForegroundController.onStreamStopped()
+    }
+
+    private fun nowEpochSeconds(): Double = System.currentTimeMillis() / 1000.0
+
+    private fun PendingAttachmentUi.toMessageAttachment(): MessageAttachment = MessageAttachment(
+        name = name,
+        path = path,
+        mime = mime,
+        size = size,
+        isImage = isImage,
+    )
+
+    /** Executes a slash command action -- either sends a prompt or triggers UI state. */
+    private fun executeCommand(command: CommandAction, argument: String = "") {
+        when (command) {
+            is CommandAction.Continue -> {
+                _uiState.update { it.copy(composerText = command.prompt) }
+                sendMessage()
+            }
+            is CommandAction.Summarize -> {
+                _uiState.update { it.copy(composerText = command.prompt) }
+                sendMessage()
+            }
+            is CommandAction.Stop -> cancelStream()
+            is CommandAction.Interrupt -> cancelStream()
+            is CommandAction.Retry -> retryLastMessage()
+            is CommandAction.Edit -> {
+                // Find last user message and trigger edit
+                val lastUserIdx = _uiState.value.messages.indexOfLast { it.role == "user" }
+                if (lastUserIdx >= 0) editMessage(lastUserIdx)
+            }
+            is CommandAction.Fork, is CommandAction.Branch -> forkFromMessage()
+            is CommandAction.New -> {
+                _uiState.update { it.copy(errorMessage = "Use the + button to start a new session.") }
+            }
+            is CommandAction.Clear -> {
+                _uiState.update { it.copy(messages = emptyList(), streamingText = "") }
+            }
+            is CommandAction.Search -> {
+                _uiState.update { it.copy(errorMessage = "Use the search icon in sessions list to search.") }
+            }
+            is CommandAction.Compress, is CommandAction.Compact -> {
+                _uiState.update { it.copy(composerText = "Please compress the conversation context.") }
+                sendMessage()
+            }
+            is CommandAction.Status -> {
+                val msgCount = _uiState.value.messages.size
+                val streaming = _uiState.value.isStreaming
+                _uiState.update { it.copy(errorMessage = "Messages: $msgCount | Streaming: $streaming | Session: $sessionId") }
+            }
+            is CommandAction.Model -> {
+                _uiState.update { it.copy(errorMessage = "Use the model chip in the composer to switch models.") }
+            }
+            is CommandAction.Workspace -> {
+                _uiState.update { it.copy(errorMessage = "Use the workspace chip in the composer to switch workspace.") }
+            }
+            is CommandAction.Reasoning -> {
+                _uiState.update { it.copy(expandThinkingByDefault = !it.expandThinkingByDefault) }
+            }
+            is CommandAction.Skills -> {
+                _uiState.update { it.copy(errorMessage = "Browse skills from the navigation drawer.") }
+            }
+            is CommandAction.Goal -> {
+                if (argument.isNotBlank()) {
+                    _uiState.update { it.copy(composerText = "Goal: $argument") }
+                    sendMessage()
+                }
+            }
+            is CommandAction.Title -> {
+                if (argument.isNotBlank()) {
+                    // Rename the session
+                    viewModelScope.launch {
+                        try {
+                            val api = authRepository.apiForActiveServer() ?: return@launch
+                            safeApiCall { api.renameSession(SessionRenameRequest(session_id = sessionId, title = argument)) }
+                        } catch (_: ApiError) {}
+                    }
+                }
+            }
+            is CommandAction.Personality -> {
+                if (argument.isNotBlank()) {
+                    _uiState.update { it.copy(composerText = "Please adopt this personality: $argument") }
+                    sendMessage()
+                }
+            }
+            is CommandAction.Queue -> {
+                if (argument.isNotBlank()) {
+                    _uiState.update { it.copy(composerText = argument) }
+                    sendMessage()
+                }
+            }
+            is CommandAction.Btw -> {
+                if (argument.isNotBlank()) {
+                    _uiState.update { it.copy(composerText = "By the way: $argument") }
+                    sendMessage()
+                }
+            }
+            is CommandAction.Background -> {
+                _uiState.update { it.copy(errorMessage = "The agent will continue running in the background.") }
+            }
+            is CommandAction.Undo -> {
+                // Find last user message and remove it
+                val msgs = _uiState.value.messages
+                val lastUserIdx = msgs.indexOfLast { it.role == "user" }
+                if (lastUserIdx >= 0) {
+                    viewModelScope.launch {
+                        try {
+                            val api = authRepository.apiForActiveServer() ?: return@launch
+                            if (activeStreamId != null) cancelStream()
+                            awaitPendingCancel()
+                            safeApiCall { api.truncateSession(TruncateSessionRequest(session_id = sessionId, keep_count = lastUserIdx)) }
+                            _uiState.update { it.copy(messages = it.messages.take(lastUserIdx)) }
+                        } catch (e: ApiError) {
+                            _uiState.update { it.copy(errorMessage = e.message ?: "Could not undo.") }
+                        }
+                    }
+                }
+            }
+            is CommandAction.Steer -> {
+                _uiState.update { it.copy(composerText = argument) }
+                sendMessage()
+            }
+            is CommandAction.Reasoning -> {
+                _uiState.update { it.copy(errorMessage = "Use the thinking toggle in settings to show/hide reasoning.") }
+            }
+            is CommandAction.Title -> {
+                // Handled in Title case above
+            }
+            is CommandAction.Personality -> {
+                // Handled in Personality case above
+            }
+            is CommandAction.Queue -> {
+                // Handled in Queue case above
+            }
+            is CommandAction.Btw -> {
+                // Handled in Btw case above
+            }
+            is CommandAction.Skills -> {
+                _uiState.update { it.copy(errorMessage = "Use the skills icon in the drawer to browse skills.") }
+            }
+            is CommandAction.Goal -> {
+                _uiState.update { it.copy(errorMessage = "Use the goal chip in the composer to set a goal.") }
+            }
+            is CommandAction.Model -> {
+                _uiState.update { it.copy(errorMessage = "Use the model chip in the composer to switch models.") }
+            }
+            is CommandAction.Workspace -> {
+                _uiState.update { it.copy(errorMessage = "Use the workspace chip in the composer to switch workspaces.") }
+            }
+        }
+    }
+
+    /** Send a steer message to redirect an in-flight response without cancelling it.
+     *  POST /api/chat/steer with { session_id, text }. */
+    fun steer(text: String) {
+        if (text.isBlank()) return
+        if (activeStreamId == null) {
+            _uiState.update { it.copy(errorMessage = "No active stream to steer.") }
+            return
+        }
+        viewModelScope.launch {
+            _uiState.update { it.copy(isSteering = true) }
+            try {
+                val api = authRepository.apiForActiveServer() ?: throw ApiError.Network(Exception("Not signed in"))
+                val response = safeApiCall {
+                    api.chatSteer(com.peditx.hermex.core.network.dto.ChatSteerRequest(
+                        session_id = sessionId,
+                        text = text,
+                    ))
+                }
+                if (response.error != null) {
+                    _uiState.update { it.copy(errorMessage = response.error) }
+                }
+            } catch (e: ApiError) {
+                _uiState.update { it.copy(errorMessage = e.message ?: "Could not steer the response.") }
+            } finally {
+                _uiState.update { it.copy(isSteering = false) }
+            }
+        }
+    }
+
+    /** Fork the current conversation from the last message, creating a new session.
+     *  POST /api/chat/branch with { session_id }. */
+    fun forkFromMessage() {
+        if (_uiState.value.isForkingMessage) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(isForkingMessage = true) }
+            try {
+                val api = authRepository.apiForActiveServer() ?: throw ApiError.Network(Exception("Not signed in"))
+                if (activeStreamId != null) cancelStream()
+                awaitPendingCancel()
+                val response = safeApiCall {
+                    api.branchSession(BranchSessionRequest(
+                        session_id = sessionId,
+                    ))
+                }
+                if (response.error != null) {
+                    _uiState.update { it.copy(errorMessage = response.error) }
+                } else if (response.session_id != null) {
+                    _uiState.update { it.copy(errorMessage = "Forked to new session: ${response.session_id}") }
+                }
+            } catch (e: ApiError) {
+                _uiState.update { it.copy(errorMessage = e.message ?: "Could not fork session.") }
+            } finally {
+                _uiState.update { it.copy(isForkingMessage = false) }
+            }
+        }
+    }
+
+    /** Matches iOS's `PendingAttachment.chatReference`: prefer the server-assigned upload path,
+     * falling back to the display name only when there's no path at all. */
+    private fun MessageAttachment.chatReference(): String? =
+        path?.takeIf { it.isNotBlank() } ?: name?.takeIf { it.isNotBlank() }
+}
