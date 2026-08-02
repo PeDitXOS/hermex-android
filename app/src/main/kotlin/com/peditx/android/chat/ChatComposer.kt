@@ -8,12 +8,13 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -24,6 +25,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -41,6 +44,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.FilledIconButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -75,6 +79,10 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardActions
+import androidx.compose.ui.text.input.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -387,7 +395,6 @@ fun ChatComposer(
                                         .padding(end = 4.dp),
                                     contentAlignment = Alignment.Center,
                                 ) {
-                                    // Recording indicator overlay
                                     if (isRecording) {
                                         Box(
                                             modifier = Modifier
@@ -417,7 +424,7 @@ fun ChatComposer(
                                         }
                                     } else {
                                         // Normal action button
-                                        val (icon, contentDesc, buttonColor, contentColor) = when {
+                                        val actionButton = when {
                                             composerState.showStopButton -> {
                                                 Icons.Filled.Close to "Stop" to MaterialTheme.colorScheme.errorContainer to MaterialTheme.colorScheme.onErrorContainer
                                             }
@@ -428,6 +435,10 @@ fun ChatComposer(
                                                 Icons.AutoMirrored.Filled.Send to "Send" to MaterialTheme.colorScheme.primaryContainer to MaterialTheme.colorScheme.onPrimaryContainer
                                             }
                                         }
+                                        val icon = actionButton.first
+                                        val contentDesc = actionButton.second
+                                        val buttonColor = actionButton.third.first
+                                        val contentColor = actionButton.third.second
                                         FilledIconButton(
                                             onClick = {
                                                 // Click handled by combinedClickable
@@ -635,7 +646,7 @@ private fun PendingAttachmentStrip(
                             contentAlignment = Alignment.Center,
                         ) {
                             Icon(
-                                attachment.mimeType?.fileTypeIcon() ?? Icons.Filled.Image,
+                                attachment.mime?.fileTypeIcon() ?? Icons.Filled.Image,
                                 contentDescription = null,
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.size(20.dp),
@@ -649,14 +660,14 @@ private fun PendingAttachmentStrip(
                             .padding(end = 8.dp, top = 4.dp, bottom = 4.dp),
                     ) {
                         Text(
-                            text = attachment.displayName,
+                            text = attachment.name ?: "Unknown file",
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onSurface,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
                         Text(
-                            text = attachment.path?.let { Formatter.formatShortFileSize(context, File(it).length()) }
+                            text = attachment.size?.let { Formatter.formatShortFileSize(context, it) }
                                 ?: "Unknown size",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
