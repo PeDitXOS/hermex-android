@@ -1,5 +1,7 @@
 package com.peditx.hermex.chat
 
+import android.Manifest
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.text.format.Formatter
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -8,12 +10,10 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -24,8 +24,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -79,6 +77,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.peditx.hermex.core.network.dto.ModelCatalogGroup
 import com.peditx.hermex.core.network.dto.ModelCatalogOption
@@ -154,12 +153,11 @@ data class ChatComposerAttachmentState(
 private val ComposerMaxWidth = 840.dp
 
 /**
- * A two-tier composer dock (input row on top, a horizontally-scrollable control strip of
- * Hermex-styled chips below), modeled on the Hermes WebUI/Desktop composer rather than a plain
- * Material `TextField` row: the dock is edge-to-edge with only its top corners rounded (a real
- * dock rising from the bottom of the screen, not a floating margin'd card), and Attach/Profile/
- * Model render as small tonal chips -- with a label when the underlying data already carries one
- * (profile name, model name) -- instead of bare icons.
+ * Single-row composer: [+] [Text Field with Send/Steer/Voice] 
+ * - + button on far left (inside text field area)
+ * - Text field in middle with "Ask Hermes" placeholder
+ * - Single action button on right that changes: Send → Steer (streaming) → Voice (hold)
+ * - Voice note recording via hold-to-talk on the action button
  */
 @Composable
 fun ChatComposer(
@@ -170,173 +168,283 @@ fun ChatComposer(
     actions: ChatComposerActions,
     modifier: Modifier = Modifier,
 ) {
-    // enableEdgeToEdge() (MainActivity) draws the app behind the system navigation bar. The dock's
-        // tonal background is allowed to extend all the way to the physical bottom edge (behind
-        // gesture nav), matching a real bottom dock -- only the interactive content inside is padded
-        // clear of the nav bar via navigationBarsPadding() on the inner Column, not the outer Surface.
-        // Deliberately NOT also adding imePadding(): Scaffold's own default contentWindowInsets
-        // (WindowInsets.safeDrawing, which includes ime) already accounts for the keyboard once, so
-        // stacking an explicit imePadding() on top double-counted the keyboard height and left a large
-        // blank gap above it when the keyboard opened.
-        // Logged only on change, not every recomposition -- lets `adb logcat -s Hermex/Composer`
-        // confirm Scaffold's innerPadding is actually reserving this much space for the transcript
-        // (see ChatScreen investigation notes on composer/content overlap).
-        val context = LocalContext.current
-        var lastLoggedHeightPx by remember { mutableStateOf(-1) }
-        var showCommandPicker by remember { mutableStateOf(false) }
-        var commandQuery by remember { mutableStateOf("") }
+    val context = LocalContext.current
+    var lastLoggedHeightPx by remember { mutableStateOf(-1) }
+    var showCommandPicker by remember { mutableStateOf(false) }
+    var commandQuery by remember { mutableStateOf("") }
 
-        // File picker launcher for attach button
-        val filePickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-            uri?.let(actions.onAttachFile)
+    // File picker launcher for attach button
+    val filePickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        uri?.let(actions.onAttachFile)
+    }
+
+    // Permission launcher for microphone
+    val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) {
+            // Permission granted - voice recording can start
         }
+    }
 
-        // Capped and centered rather than left plain fillMaxWidth(), so the dock doesn't stretch to an
-        // awkward, hard-to-type-in width on a large tablet's wide-layout right pane. On any phone-scale
-        // width (compact or the adaptive shell's ~400dp right pane) the cap never binds, so this Box is
-        // a no-op there -- outer width stays fillMaxWidth() exactly as before, just with the (possibly
-        // narrower) dock centered inside it.
-        // Deliberately no fillMaxWidth() before widthIn(max=...) below: fillMaxWidth() pins both min
-        // and max width to the full available space, so a subsequent widthIn(max) below that pinned
-        // min gets silently overridden back up to full width, defeating the cap on wide panes.
-        Box(modifier = modifier.fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
-            Surface(
-                modifier = Modifier
-                    .widthIn(max = ComposerMaxWidth)
-                    .onGloballyPositioned { coordinates ->
-                        val heightPx = coordinates.size.height
-                        if (heightPx != lastLoggedHeightPx) {
-                            lastLoggedHeightPx = heightPx
-                            HermexLog.d("Composer", "measured height=${heightPx}px")
-                        }
-                    },
-                color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                shape = RoundedCornerShape(topStart = HermexRadii.SettingsCard, topEnd = HermexRadii.SettingsCard),
-                tonalElevation = 4.dp,
-            ) {
-                Column(modifier = Modifier.navigationBarsPadding()) {
-                    // Hairline separating the dock from the message list above -- the app-wide
-                    // substitute for wrapping the whole (now asymmetrically-rounded) shape in a border.
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f), thickness = 1.dp)
+    // Voice recording state
+    var isRecording by remember { mutableStateOf(false) }
+    var recordingDuration by remember { mutableStateOf(0L) }
+    val recordingScope = rememberCoroutineScope()
+    val haptic = LocalHapticFeedback.current
 
-                    if (attachmentState.pendingAttachments.isNotEmpty()) {
-                        PendingAttachmentStrip(
-                            attachments = attachmentState.pendingAttachments,
-                            onRemove = actions.onRemoveAttachment,
-                        )
+    // Combined clickable for the action button - handles tap (send/steer) and long press (voice)
+    val actionInteractionSource = remember { MutableInteractionSource() }
+    val actionCombinedClickable = combinedClickable(
+        onClick = {
+            haptic.performHapticFeedback(HapticFeedbackType.LightTouch)
+            when {
+                composerState.showStopButton -> actions.onStop()
+                composerState.isStreaming -> {
+                    if (composerState.canSend) actions.onSteer()
+                }
+                else -> {
+                    if (composerState.canSend) actions.onSend()
+                }
+            }
+        },
+        onLongPress = {
+            // Voice recording - only when not streaming and not showing stop
+            if (!composerState.isStreaming && !composerState.showStopButton) {
+                val hasPermission = ContextCompat.checkSelfPermission(
+                    context, Manifest.permission.RECORD_AUDIO
+                ) == PackageManager.PERMISSION_GRANTED
+                if (hasPermission) {
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    startRecording()
+                } else {
+                    permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                }
+            }
+        },
+        onLongPressRelease = {
+            if (isRecording) {
+                stopRecording()
+            }
+        },
+    )
+
+    fun startRecording() {
+        isRecording = true
+        recordingDuration = 0
+        recordingScope.launch {
+            while (isRecording && recordingDuration < 300_000) { // 5 min max
+                delay(100)
+                recordingDuration += 100
+            }
+        }
+    }
+
+    fun stopRecording() {
+        isRecording = false
+        // TODO: Save voice note and call actions.onSendVoiceNote(file, duration)
+        if (recordingDuration > 500) { // Minimum 500ms
+            // Voice note recorded
+        }
+    }
+
+    Box(modifier = modifier.fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
+        Surface(
+            modifier = Modifier
+                .widthIn(max = ComposerMaxWidth)
+                .onGloballyPositioned { coordinates ->
+                    val heightPx = coordinates.size.height
+                    if (heightPx != lastLoggedHeightPx) {
+                        lastLoggedHeightPx = heightPx
+                        HermexLog.d("Composer", "measured height=${heightPx}px")
                     }
+                },
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            shape = RoundedCornerShape(topStart = HermexRadii.SettingsCard, topEnd = HermexRadii.SettingsCard),
+            tonalElevation = 4.dp,
+        ) {
+            Column(modifier = Modifier.navigationBarsPadding()) {
+                // Hairline separating the dock from the message list above
+                HorizontalDivider(
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
+                    thickness = 1.dp
+                )
 
-                    if (showCommandPicker) {
-                        val suggestions = CommandRegistry.filter(commandQuery)
-                        if (suggestions.isNotEmpty()) {
-                            Surface(
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(HermexRadii.Accessory),
-                                shadowElevation = 4.dp,
-                            ) {
-                                Column {
-                                    suggestions.forEach { suggestion ->
-                                        ListItem(
-                                            headlineContent = { Text(suggestion.command) },
-                                            supportingContent = { Text(suggestion.description) },
-                                            leadingContent = {
-                                                Icon(suggestion.icon, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                                            },
-                                            modifier = Modifier.clickable {
-                                                actions.onTextChanged(suggestion.command + " ")
-                                                showCommandPicker = false
-                                            },
-                                        )
-                                    }
+                if (attachmentState.pendingAttachments.isNotEmpty()) {
+                    PendingAttachmentStrip(
+                        attachments = attachmentState.pendingAttachments,
+                        onRemove = actions.onRemoveAttachment,
+                    )
+                }
+
+                if (showCommandPicker) {
+                    val suggestions = CommandRegistry.filter(commandQuery)
+                    if (suggestions.isNotEmpty()) {
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(HermexRadii.Accessory),
+                            shadowElevation = 4.dp,
+                        ) {
+                            Column {
+                                suggestions.forEach { suggestion ->
+                                    ListItem(
+                                        headlineContent = { Text(suggestion.command) },
+                                        supportingContent = { Text(suggestion.description) },
+                                        leadingContent = {
+                                            Icon(suggestion.icon, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        },
+                                        modifier = Modifier.clickable {
+                                            actions.onTextChanged(suggestion.command + " ")
+                                            showCommandPicker = false
+                                        },
+                                    )
                                 }
                             }
                         }
                     }
+                }
 
-                    Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
-                        // Single-row pill: [+] [Ask Hermes] [Send/Steer]
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 12.dp, vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            // + button
-                            IconButton(onClick = { filePickerLauncher.launch(arrayOf("*/*")) }) {
-                                Icon(
-                                    Icons.Filled.Add,
-                                    contentDescription = "Attach file",
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-
-                            // Text field - "Ask Hermes"
-                            OutlinedTextField(
-                                value = composerState.text,
-                                onValueChange = { newValue ->
-                                    actions.onTextChanged(newValue)
-                                    if (newValue.startsWith("/")) {
-                                        showCommandPicker = true
-                                        commandQuery = newValue
-                                    } else {
-                                        showCommandPicker = false
-                                    }
-                                },
-                                modifier = Modifier.weight(1f),
-                                placeholder = { Text(if (composerState.isStreaming) "Steer the response…" else "Ask Hermes") },
-                                enabled = composerState.isTextFieldEnabled,
-                                maxLines = 5,
-                                shape = RoundedCornerShape(HermexRadii.Composer),
-                                colors = OutlinedTextFieldDefaults.colors(
-                                    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                                    focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                                    unfocusedBorderColor = Color.Transparent,
-                                    focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
-                                ),
+                // Main input row: [+] [TextField with action button]
+                Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        // + button (inside the text field area, far left)
+                        IconButton(onClick = { filePickerLauncher.launch(arrayOf("*/*")) }) {
+                            Icon(
+                                Icons.Filled.Add,
+                                contentDescription = "Attach file",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
+                        }
 
-                            // Send / Steer button (convertible)
-                            Box(
-                                modifier = Modifier.size(48.dp),
-                                contentAlignment = Alignment.Center,
+                        // Text field with integrated action button
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(48.dp)
+                                .background(
+                                    color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                                    shape = RoundedCornerShape(HermexRadii.Composer)
+                                )
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxSize(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
                             ) {
-                                when {
-                                    composerState.showStopButton -> {
-                                        val haptic = LocalHapticFeedback.current
+                                // Text field
+                                OutlinedTextField(
+                                    value = composerState.text,
+                                    onValueChange = { newValue ->
+                                        actions.onTextChanged(newValue)
+                                        if (newValue.startsWith("/")) {
+                                            showCommandPicker = true
+                                            commandQuery = newValue
+                                        } else {
+                                            showCommandPicker = false
+                                        }
+                                    },
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .padding(start = 12.dp, end = 4.dp),
+                                    placeholder = { Text(
+                                        text = if (composerState.isStreaming) "Steer the response…" else "Ask Hermes",
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                    ) },
+                                    enabled = composerState.isTextFieldEnabled,
+                                    maxLines = 5,
+                                    singleLine = false,
+                                    keyboardOptions = androidx.compose.ui.text.input.KeyboardOptions(
+                                        imeAction = androidx.compose.ui.text.input.ImeAction.Send,
+                                        keyboardType = androidx.compose.ui.text.input.KeyboardType.Text
+                                    ),
+                                    keyboardActions = androidx.compose.ui.text.input.KeyboardActions(
+                                        onDone = {
+                                            if (composerState.canSend && !composerState.isStreaming && !composerState.showStopButton) {
+                                                actions.onSend()
+                                            }
+                                        }
+                                    ),
+                                    shape = RoundedCornerShape(HermexRadii.Composer),
+                                    colors = OutlinedTextFieldDefaults.colors(
+                                        unfocusedContainerColor = Color.Transparent,
+                                        focusedContainerColor = Color.Transparent,
+                                        unfocusedBorderColor = Color.Transparent,
+                                        focusedBorderColor = Color.Transparent,
+                                        cursorColor = MaterialTheme.colorScheme.primary,
+                                        textColor = MaterialTheme.colorScheme.onSurface,
+                                        placeholderTextColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                    ),
+                                    label = null,
+                                )
+
+                                // Single action button: Send / Steer / Voice
+                                Box(
+                                    modifier = Modifier
+                                        .size(40.dp)
+                                        .combinedClickable(actionCombinedClickable)
+                                        .padding(end = 4.dp),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    // Recording indicator overlay
+                                    if (isRecording) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(40.dp)
+                                                .background(
+                                                    color = MaterialTheme.colorScheme.primaryContainer,
+                                                    shape = RoundedCornerShape(HermexRadii.Composer)
+                                                ),
+                                            contentAlignment = Alignment.Center,
+                                        ) {
+                                            Column(
+                                                modifier = Modifier.padding(horizontal = 8.dp),
+                                                horizontalAlignment = Alignment.CenterHorizontally
+                                            ) {
+                                                Icon(
+                                                    Icons.Filled.Mic,
+                                                    contentDescription = "Recording",
+                                                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                                    modifier = Modifier.size(18.dp),
+                                                )
+                                                Text(
+                                                    text = formatElapsed(recordingDuration),
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                                )
+                                            }
+                                        }
+                                    } else {
+                                        // Normal action button
+                                        val (icon, contentDesc, buttonColor, contentColor) = when {
+                                            composerState.showStopButton -> {
+                                                Icons.Filled.Close to "Stop" to MaterialTheme.colorScheme.errorContainer to MaterialTheme.colorScheme.onErrorContainer
+                                            }
+                                            composerState.isStreaming -> {
+                                                Icons.AutoMirrored.Filled.Send to "Steer" to MaterialTheme.colorScheme.primaryContainer to MaterialTheme.colorScheme.onPrimaryContainer
+                                            }
+                                            else -> {
+                                                Icons.AutoMirrored.Filled.Send to "Send" to MaterialTheme.colorScheme.primaryContainer to MaterialTheme.colorScheme.onPrimaryContainer
+                                            }
+                                        }
                                         FilledIconButton(
                                             onClick = {
-                                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                                actions.onStop()
+                                                // Click handled by combinedClickable
                                             },
-                                            colors = IconButtonDefaults.filledIconButtonColors(
-                                                containerColor = MaterialTheme.colorScheme.errorContainer,
-                                                contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                                            enabled = composerState.canSend || composerState.showStopButton,
+                                            colors = FilledIconButtonDefaults.filledIconButtonColors(
+                                                containerColor = buttonColor,
+                                                contentColor = contentColor,
+                                                disabledContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                                                disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
                                             ),
-                                            modifier = Modifier.size(48.dp),
+                                            modifier = Modifier.size(40.dp),
                                         ) {
                                             Icon(
-                                                Icons.Filled.Close,
-                                                contentDescription = "Stop",
-                                                modifier = Modifier.size(24.dp),
-                                            )
-                                        }
-                                    }
-                                    composerState.isStreaming -> {
-                                        // Steer button during streaming
-                                        FilledIconButton(onClick = actions.onSteer, enabled = composerState.canSend) {
-                                            Icon(
-                                                Icons.AutoMirrored.Filled.Send,
-                                                contentDescription = "Steer",
-                                            )
-                                        }
-                                    }
-                                    else -> {
-                                        // Send button
-                                        FilledIconButton(onClick = actions.onSend, enabled = composerState.canSend) {
-                                            Icon(
-                                                Icons.AutoMirrored.Filled.Send,
-                                                contentDescription = "Send",
+                                                icon,
+                                                contentDescription = contentDesc,
+                                                modifier = Modifier.size(20.dp),
                                             )
                                         }
                                     }
@@ -347,6 +455,15 @@ fun ChatComposer(
                 }
             }
         }
+    }
+}
+
+/** Format milliseconds to MM:SS */
+private fun formatElapsed(ms: Long): String {
+    val totalSeconds = ms / 1000
+    val minutes = totalSeconds / 60
+    val seconds = totalSeconds % 60
+    return "%02d:%02d".format(minutes, seconds)
 }
 
 /** Shared visual container for the composer's bottom control strip -- a small tonal pill with an
@@ -401,31 +518,6 @@ private fun ComposerChip(
             content = chipContent,
         )
     }
-}
-
-/** No paperclip icon ships in `material-icons-core` (only `material-icons-extended` has one, and
- * adding that dependency purely for one icon isn't worth it) -- `Add` is the closest already-
- * available icon and is what the MVP spec explicitly allows as a fallback. Opens the system
- * document picker (Storage Access Framework), so no storage permission is needed: the picker
- * itself grants this app read access to whatever the user selects. */
-@Composable
-private fun AttachFileButton(
-    enabled: Boolean,
-    isUploading: Boolean,
-    onAttachFile: (Uri) -> Unit,
-) {
-    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        uri?.let(onAttachFile)
-    }
-
-    ComposerChip(
-        icon = Icons.Filled.Add,
-        label = null,
-        contentDescription = "Attach file",
-        enabled = enabled,
-        isLoading = isUploading,
-        onClick = { launcher.launch(arrayOf("*/*")) },
-    )
 }
 
 @Composable
@@ -493,95 +585,96 @@ private fun PendingAttachmentStrip(
                     if (attachment.isImage == true && attachment.path != null) {
                         // Thumbnail for images
                         Box(
-                            modifier = Modifier
-                                .size(40.dp),
+                            modifier = Modifier.size(40.dp),
                             contentAlignment = Alignment.Center,
                         ) {
                             SubcomposeAsyncImage(
-                                model = attachment.path,
-                                contentDescription = attachment.name ?: "Attachment thumbnail",
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .clip(RoundedCornerShape(HermexRadii.Accessory)),
+                                model = attachment.path!!,
+                                contentDescription = null,
                                 contentScale = ContentScale.Crop,
-                                loading = {
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .clip(RoundedCornerShape(HermexRadii.Accessory)),
+                                placeholder = {
                                     Box(
-                                        modifier = Modifier
-                                            .fillMaxSize()
-                                            .background(
-                                                MaterialTheme.colorScheme.surfaceContainerLow,
-                                                RoundedCornerShape(HermexRadii.Accessory),
-                                            ),
+                                        modifier = Modifier.size(40.dp)
+                                            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                                            .clip(RoundedCornerShape(HermexRadii.Accessory)),
                                         contentAlignment = Alignment.Center,
                                     ) {
                                         CircularProgressIndicator(
-                                            modifier = Modifier.size(16.dp),
+                                            modifier = Modifier.size(20.dp),
                                             strokeWidth = 2.dp,
                                         )
                                     }
                                 },
                                 error = {
-                                    Icon(
-                                        Icons.Filled.Image,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.size(24.dp),
-                                    )
+                                    Box(
+                                        modifier = Modifier.size(40.dp)
+                                            .background(MaterialTheme.colorScheme.errorContainer)
+                                            .clip(RoundedCornerShape(HermexRadii.Accessory)),
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        Icon(
+                                            Icons.Filled.Image,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.onErrorContainer,
+                                            modifier = Modifier.size(20.dp),
+                                        )
+                                    }
                                 },
                             )
                         }
                     } else {
-                        Icon(
-                            fileTypeIcon(attachment.mime),
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(24.dp).padding(8.dp),
-                        )
-                    }
-                    Column(
-                        modifier = Modifier
-                            .weight(1f)
-                            .padding(end = 8.dp),
-                    ) {
-                        Text(
-                            text = attachment.name ?: "File",
-                            style = MaterialTheme.typography.labelMedium,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        attachment.size?.let { size ->
-                            Text(
-                                text = Formatter.formatFileSize(context, size),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                        // File type icon
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                                .clip(RoundedCornerShape(HermexRadii.Accessory)),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(
+                                attachment.mimeType?.fileTypeIcon() ?? Icons.Filled.Image,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(20.dp),
                             )
                         }
                     }
+                    Spacer(Modifier.width(8.dp))
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(end = 8.dp, top = 4.dp, bottom = 4.dp),
+                    ) {
+                        Text(
+                            text = attachment.displayName,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Text(
+                            text = attachment.path?.let { Formatter.formatShortFileSize(context, File(it).length()) }
+                                ?: "Unknown size",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                     IconButton(
                         onClick = { onRemove(attachment.id) },
-                        modifier = Modifier.padding(end = 8.dp),
+                        modifier = Modifier.padding(end = 4.dp).size(32.dp),
                     ) {
                         Icon(
                             Icons.Filled.Close,
-                            contentDescription = "Remove attachment",
+                            contentDescription = "Remove",
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(18.dp),
                         )
                     }
                 }
             }
         }
-    }
-}
-
-/** Formats elapsed milliseconds as MM:SS or HH:MM:SS. */
-private fun formatElapsed(ms: Long): String {
-    val totalSeconds = ms / 1000
-    val hours = totalSeconds / 3600
-    val minutes = (totalSeconds % 3600) / 60
-    val seconds = totalSeconds % 60
-    return if (hours > 0) {
-        String.format("%d:%02d:%02d", hours, minutes, seconds)
-    } else {
-        String.format("%02d:%02d", minutes, seconds)
     }
 }
