@@ -42,7 +42,6 @@ import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -295,10 +294,6 @@ fun ChatComposer(
                             enabled = composerState.isTextFieldEnabled,
                             maxLines = 5,
                             singleLine = false,
-                            keyboardOptions = KeyboardOptions.Default.copy(
-                                imeAction = ImeAction.Send,
-                                keyboardType = KeyboardType.Text
-                            ),
                             shape = RoundedCornerShape(24.dp),
                             colors = OutlinedTextFieldDefaults.colors(
                                 unfocusedContainerColor = Color.Transparent,
@@ -349,10 +344,14 @@ fun ChatComposer(
                             }
                         }
 
-                        Box(
-                            modifier = Modifier
-                                .size(40.dp)
-                                .clickable {
+                        // Use simple clickable with combined click + long press detection
+                        var longPressTimer by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+                        val longPressThreshold = 400L
+
+                        val clickableModifier = Modifier
+                            .size(40.dp)
+                            .combinedClickable(
+                                onClick = {
                                     when {
                                         showStop || (isStreaming && !hasText) -> {
                                             haptic.performHapticFeedback(HapticFeedbackType.LightTouch)
@@ -374,8 +373,8 @@ fun ChatComposer(
                                             // Empty + not streaming: voice needs long press
                                         }
                                     }
-                                }
-                                .onLongClick {
+                                },
+                                onLongClick = {
                                     if (!isStreaming && !hasText) {
                                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                         val hasPermission = ContextCompat.checkSelfPermission(
@@ -387,8 +386,13 @@ fun ChatComposer(
                                             permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
                                         }
                                     }
-                                }
-                                .padding(end = 4.dp),
+                                },
+                                onDoubleClick = {}
+                            )
+                            .padding(end = 4.dp)
+
+                        Box(
+                            modifier = clickableModifier,
                             contentAlignment = Alignment.Center,
                         ) {
                             if (isRecording) {
@@ -420,7 +424,7 @@ fun ChatComposer(
                                 }
                             } else {
                                 FilledIconButton(
-                                    onClick = { /* handled by clickable above */ },
+                                    onClick = { /* handled by combinedClickable */ },
                                     enabled = composerState.canSend || showStop || isStreaming,
                                     modifier = Modifier.size(40.dp),
                                 ) {
@@ -656,8 +660,8 @@ private fun PendingAttachmentStrip(
 private fun fileTypeIcon(mime: String?): ImageVector {
     return when {
         mime?.startsWith("image/") == true -> Icons.Filled.Image
-        mime?.startsWith("video/") == true -> Icons.Filled.VideoFile
-        mime?.startsWith("audio/") == true -> Icons.Filled.AudioFile
+        mime?.startsWith("video/") == true -> Icons.Filled.Videocam
+        mime?.startsWith("audio/") == true -> Icons.Filled.MusicNote
         mime?.startsWith("application/pdf") == true -> Icons.Filled.PictureAsPdf
         mime?.startsWith("text/") == true -> Icons.Filled.Description
         else -> Icons.Filled.InsertDriveFile
