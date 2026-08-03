@@ -300,7 +300,7 @@ fun ChatComposer(
                                     .weight(1f)
                                     .padding(start = 8.dp, end = 4.dp),
                                 placeholder = { Text(
-                                    text = "Ask Conduit",
+                                    text = if (composerState.isStreaming) "Steer the response…" else "Ask Hermes",
                                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
                                 ) },
                                 enabled = composerState.isTextFieldEnabled,
@@ -316,24 +316,78 @@ fun ChatComposer(
                                 label = null,
                             )
 
-                            // Microphone button
+                            // ===== DYNAMIC ACTION BUTTON: Send / Steer / Stop / Voice =====
+                            val isStreaming = composerState.isStreaming
+                            val hasText = composerState.text.isNotBlank()
+                            val showStop = composerState.showStopButton
+
+                            val actionIcon: androidx.compose.ui.graphics.vector.ImageVector
+                            val actionDesc: String
+                            val actionContainerColor: androidx.compose.ui.graphics.Color
+                            val actionContentColor: androidx.compose.ui.graphics.Color
+                            val actionEnabled: Boolean
+
+                            when {
+                                showStop || (isStreaming && !hasText) -> {
+                                    actionIcon = Icons.Filled.Close
+                                    actionDesc = "Stop"
+                                    actionContainerColor = MaterialTheme.colorScheme.errorContainer
+                                    actionContentColor = MaterialTheme.colorScheme.onErrorContainer
+                                    actionEnabled = true
+                                }
+                                isStreaming && hasText -> {
+                                    actionIcon = Icons.AutoMirrored.Filled.Send
+                                    actionDesc = "Steer"
+                                    actionContainerColor = MaterialTheme.colorScheme.primaryContainer
+                                    actionContentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                                    actionEnabled = composerState.canSend
+                                }
+                                !isStreaming && hasText -> {
+                                    actionIcon = Icons.AutoMirrored.Filled.Send
+                                    actionDesc = "Send"
+                                    actionContainerColor = MaterialTheme.colorScheme.primaryContainer
+                                    actionContentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                                    actionEnabled = composerState.canSend
+                                }
+                                else -> {
+                                    actionIcon = Icons.Filled.Mic
+                                    actionDesc = "Voice"
+                                    actionContainerColor = MaterialTheme.colorScheme.primaryContainer
+                                    actionContentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                                    actionEnabled = true
+                                }
+                            }
+
                             Box(
                                 modifier = Modifier
                                     .size(40.dp)
                                     .combinedClickable(
                                         onClick = {
                                             performHaptic()
-                                            actions.onStartVoiceRecording()
+                                            when {
+                                                showStop || (isStreaming && !hasText) -> actions.onStop()
+                                                isStreaming && hasText -> {
+                                                    if (composerState.canSend) actions.onSteer()
+                                                }
+                                                !isStreaming && hasText -> {
+                                                    if (composerState.canSend) actions.onSend()
+                                                }
+                                                else -> {
+                                                    // Empty + not streaming: do nothing on click (voice needs long press)
+                                                }
+                                            }
                                         },
                                         onLongClick = {
-                                            val hasPermission = ContextCompat.checkSelfPermission(
-                                                context, Manifest.permission.RECORD_AUDIO
-                                            ) == PackageManager.PERMISSION_GRANTED
-                                            if (hasPermission) {
-                                                performHaptic()
-                                                startRecording()
-                                            } else {
-                                                permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                                            if (!isStreaming && !hasText) {
+                                                val hasPermission = ContextCompat.checkSelfPermission(
+                                                    context, Manifest.permission.RECORD_AUDIO
+                                                ) == PackageManager.PERMISSION_GRANTED
+                                                if (hasPermission) {
+                                                    performHaptic()
+                                                    startRecording()
+                                                } else {
+                                                    permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                                                }
                                             }
                                         },
                                         onDoubleClick = {}
@@ -370,19 +424,19 @@ fun ChatComposer(
                                     }
                                 } else {
                                     FilledIconButton(
-                                        onClick = {
-                                            // Click handled by combinedClickable
-                                        },
-                                        enabled = true,
+                                        onClick = { /* handled by combinedClickable */ },
+                                        enabled = actionEnabled,
                                         colors = IconButtonDefaults.filledIconButtonColors(
-                                            containerColor = MaterialTheme.colorScheme.primaryContainer,
-                                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                                            containerColor = actionContainerColor,
+                                            contentColor = actionContentColor,
+                                            disabledContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                                            disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
                                         ),
                                         modifier = Modifier.size(40.dp),
                                     ) {
                                         Icon(
-                                            Icons.Filled.Mic,
-                                            contentDescription = "Voice input",
+                                            actionIcon,
+                                            contentDescription = actionDesc,
                                             modifier = Modifier.size(20.dp),
                                         )
                                     }
