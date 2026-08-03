@@ -3,11 +3,12 @@ package com.peditx.hermex.chat
 import android.Manifest
 import android.content.pm.PackageManager
 import android.net.Uri
-import android.text.format.Formatter
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,7 +17,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -26,37 +26,25 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Image
-import androidx.compose.material.icons.filled.InsertDriveFile
+import androidx.compose.material.icons.filled.KeyboardVoice
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Mic
-import androidx.compose.material.icons.filled.MusicNote
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.PictureAsPdf
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Videocam
+import androidx.compose.material.icons.filled.RemoveRedEye
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.ListItem
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -71,12 +59,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -84,12 +69,12 @@ import androidx.core.content.ContextCompat
 import com.peditx.hermex.core.network.dto.ModelCatalogGroup
 import com.peditx.hermex.core.network.dto.ModelCatalogOption
 import com.peditx.hermex.core.network.dto.ProfileSummary
-import coil3.compose.SubcomposeAsyncImage
-import com.peditx.hermex.core.network.dto.fileTypeIcon
 import com.peditx.hermex.core.util.HermexLog
 import com.peditx.hermex.ui.theme.HermexRadii
 import java.io.File
 
+/** [ChatComposer]'s callbacks, grouped so adding a future action (slash commands) doesn't widen
+ * [ChatComposer]'s own parameter list. */
 data class ChatComposerActions(
     val onTextChanged: (String) -> Unit,
     val onSend: () -> Unit,
@@ -102,8 +87,12 @@ data class ChatComposerActions(
     val onRemoveAttachment: (String) -> Unit,
     val onSendVoiceNote: (File, String) -> Unit,
     val onRefresh: () -> Unit,
+    val onStartVoiceRecording: () -> Unit,
+    val onStartAudioWave: () -> Unit,
 )
 
+/** The profile dropdown's own list/selection data -- separate from [ChatComposerState] because
+ * it's plain display data, not busy/disabled state. */
 data class ChatComposerProfileSelectorState(
     val profileOptions: List<ProfileSummary>,
     val selectedProfileName: String?,
@@ -116,6 +105,8 @@ data class ChatComposerProfileSelectorState(
     }
 }
 
+/** The model dropdown's own list/selection data -- separate from [ChatComposerState] for the
+ * same reason as [ChatComposerProfileSelectorState]. */
 data class ChatComposerModelSelectorState(
     val modelCatalogGroups: List<ModelCatalogGroup>,
     val currentModel: String?,
@@ -132,6 +123,8 @@ data class ChatComposerModelSelectorState(
     }
 }
 
+/** The pending-attachment strip's own list data -- separate from [ChatComposerState] for the same
+ * reason as [ChatComposerProfileSelectorState]: it's plain display data, not busy/disabled state. */
 data class ChatComposerAttachmentState(
     val pendingAttachments: List<PendingAttachmentUi>,
 ) {
@@ -142,8 +135,18 @@ data class ChatComposerAttachmentState(
     }
 }
 
+/** Caps how wide the composer dock ever gets, so a large tablet's wide-layout right pane doesn't
+ * stretch it into an uncomfortably wide, hard-to-scan input. Never binds on phone-scale widths. */
 private val ComposerMaxWidth = 840.dp
 
+/**
+ * Composer matching the design:
+ * - Header: [☰] [Hermes Agent pill] [👁]  (handled by ChatScreen top app bar)
+ * - Main area: "Start chatting" when empty (handled by ChatScreen)
+ * - Input bar: Single rounded rect: [+] [Text Field "Ask Conduit"] [🎤] [🌊]
+ * - Voice recording: Hold mic button
+ */
+@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun ChatComposer(
     composerState: ChatComposerState,
@@ -158,26 +161,33 @@ fun ChatComposer(
     var showCommandPicker by remember { mutableStateOf(false) }
     var commandQuery by remember { mutableStateOf("") }
 
+    // File picker launcher for attach button
     val filePickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let(actions.onAttachFile)
     }
 
+    // Permission launcher for microphone
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) {
             // Permission granted - voice recording can start
         }
     }
 
+    // Voice recording state
     var isRecording by remember { mutableStateOf(false) }
     var recordingDuration by remember { mutableStateOf(0L) }
     val recordingScope = rememberCoroutineScope()
     val haptic = LocalHapticFeedback.current
 
+    fun performHaptic() {
+        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+    }
+
     fun startRecording() {
         isRecording = true
         recordingDuration = 0
         recordingScope.launch {
-            while (isRecording && recordingDuration < 300_000) {
+            while (isRecording && recordingDuration < 300_000) { // 5 min max
                 delay(100)
                 recordingDuration += 100
             }
@@ -188,6 +198,7 @@ fun ChatComposer(
         isRecording = false
         if (recordingDuration > 500) {
             // Voice note recorded - send it
+            actions.onSendVoiceNote(File(""), formatElapsed(recordingDuration))
         }
     }
 
@@ -207,7 +218,8 @@ fun ChatComposer(
             tonalElevation = 4.dp,
         ) {
             Column(modifier = Modifier.navigationBarsPadding()) {
-                HorizontalDivider(
+                // Hairline separating the dock from the message list above
+                androidx.compose.material3.HorizontalDivider(
                     color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
                     thickness = 1.dp
                 )
@@ -229,7 +241,7 @@ fun ChatComposer(
                         ) {
                             Column {
                                 suggestions.forEach { suggestion ->
-                                    ListItem(
+                                    androidx.compose.material3.ListItem(
                                         headlineContent = { Text(suggestion.command) },
                                         supportingContent = { Text(suggestion.description) },
                                         leadingContent = {
@@ -246,174 +258,144 @@ fun ChatComposer(
                     }
                 }
 
-                // ===== MAIN INPUT ROW - CLEAN DESIGN =====
+                // Input bar: [+] [Text Field] [🎤] [🌊]
                 Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        // + Attach button
-                        IconButton(onClick = { filePickerLauncher.launch(arrayOf("*/*")) }) {
-                            Icon(
-                                Icons.Filled.Add,
-                                contentDescription = "Attach file",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-
-                        // Voice Input button (left of text field)
-                        IconButton(onClick = { }) {
-                            Icon(
-                                Icons.Filled.Mic,
-                                contentDescription = "Voice input",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-
-                        // MAIN TEXT FIELD - NO BORDER, NO YELLOW CONTAINER
-                        val textFieldModifier = Modifier
-                            .weight(1f)
+                    // Single rounded container for input
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
                             .height(48.dp)
-                            .padding(horizontal = 4.dp)
-
-                        OutlinedTextField(
-                            value = composerState.text,
-                            onValueChange = { newValue ->
-                                actions.onTextChanged(newValue)
-                                if (newValue.startsWith("/")) {
-                                    showCommandPicker = true
-                                    commandQuery = newValue
-                                } else {
-                                    showCommandPicker = false
-                                }
-                            },
-                            modifier = textFieldModifier,
-                            placeholder = { Text(
-                                text = if (composerState.isStreaming) "Steer the response…" else "Ask Hermes",
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-                            ) },
-                            enabled = composerState.isTextFieldEnabled,
-                            maxLines = 5,
-                            singleLine = false,
-                            shape = RoundedCornerShape(24.dp),
-                            colors = androidx.compose.material3.TextFieldDefaults.textFieldColors(
-                                unfocusedContainerColor = Color.Transparent,
-                                focusedContainerColor = Color.Transparent,
-                                unfocusedBorderColor = Color.Transparent,
-                                focusedBorderColor = Color.Transparent,
-                                cursorColor = MaterialTheme.colorScheme.primary,
-                                textColor = MaterialTheme.colorScheme.onSurface,
-                                placeholderTextColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                            ),
-                            label = null,
-                        )
-
-                        // ===== SINGLE ACTION BUTTON: Send / Voice / Steer / Stop =====
-                        val isStreaming = composerState.isStreaming
-                        val hasText = composerState.text.isNotBlank()
-                        val showStop = composerState.showStopButton
-
-                        val actionIcon: ImageVector
-                        val actionDesc: String
-                        val actionContainerColor: androidx.compose.ui.graphics.Color
-                        val actionContentColor: androidx.compose.ui.graphics.Color
-
-                        when {
-                            showStop || (isStreaming && !hasText) -> {
-                                actionIcon = Icons.Filled.Close
-                                actionDesc = "Stop"
-                                actionContainerColor = MaterialTheme.colorScheme.errorContainer
-                                actionContentColor = MaterialTheme.colorScheme.onErrorContainer
+                            .background(
+                                color = MaterialTheme.colorScheme.surfaceContainer,
+                                shape = RoundedCornerShape(HermexRadii.Composer)
+                            )
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxSize(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            // + button (far left)
+                            IconButton(onClick = { filePickerLauncher.launch(arrayOf("*/*")) }) {
+                                Icon(
+                                    Icons.Filled.Add,
+                                    contentDescription = "Attach file",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
                             }
-                            isStreaming && hasText -> {
-                                actionIcon = Icons.AutoMirrored.Filled.Send
-                                actionDesc = "Steer"
-                                actionContainerColor = MaterialTheme.colorScheme.primaryContainer
-                                actionContentColor = MaterialTheme.colorScheme.onPrimaryContainer
-                            }
-                            !isStreaming && hasText -> {
-                                actionIcon = Icons.AutoMirrored.Filled.Send
-                                actionDesc = "Send"
-                                actionContainerColor = MaterialTheme.colorScheme.primaryContainer
-                                actionContentColor = MaterialTheme.colorScheme.onPrimaryContainer
-                            }
-                            else -> {
-                                actionIcon = Icons.Filled.Mic
-                                actionDesc = "Voice"
-                                actionContainerColor = MaterialTheme.colorScheme.primaryContainer
-                                actionContentColor = MaterialTheme.colorScheme.onPrimaryContainer
-                            }
-                        }
 
-                        Box(
-                            modifier = Modifier
-                                .size(40.dp)
-                                .clickable {
-                                    when {
-                                        showStop || (isStreaming && !hasText) -> {
-                                            haptic.performHapticFeedback(HapticFeedbackType.LightTouch)
-                                            actions.onStop()
-                                        }
-                                        isStreaming && hasText -> {
-                                            if (composerState.canSend) {
-                                                haptic.performHapticFeedback(HapticFeedbackType.LightTouch)
-                                                actions.onSteer()
+                            // Text field - takes remaining space
+                            OutlinedTextField(
+                                value = composerState.text,
+                                onValueChange = { newValue ->
+                                    actions.onTextChanged(newValue)
+                                    if (newValue.startsWith("/")) {
+                                        showCommandPicker = true
+                                        commandQuery = newValue
+                                    } else {
+                                        showCommandPicker = false
+                                    }
+                                },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .padding(start = 8.dp, end = 4.dp),
+                                placeholder = { Text(
+                                    text = "Ask Conduit",
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                ) },
+                                enabled = composerState.isTextFieldEnabled,
+                                maxLines = 5,
+                                singleLine = false,
+                                shape = RoundedCornerShape(HermexRadii.Composer),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainer,
+                                    focusedContainerColor = MaterialTheme.colorScheme.surfaceContainer,
+                                    unfocusedBorderColor = Color.Transparent,
+                                    focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
+                                ),
+                                label = null,
+                            )
+
+                            // Microphone button
+                            Box(
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .combinedClickable(
+                                        onClick = {
+                                            performHaptic()
+                                            actions.onStartVoiceRecording()
+                                        },
+                                        onLongClick = {
+                                            val hasPermission = ContextCompat.checkSelfPermission(
+                                                context, Manifest.permission.RECORD_AUDIO
+                                            ) == PackageManager.PERMISSION_GRANTED
+                                            if (hasPermission) {
+                                                performHaptic()
+                                                startRecording()
+                                            } else {
+                                                permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
                                             }
-                                        }
-                                        !isStreaming && hasText -> {
-                                            if (composerState.canSend) {
-                                                haptic.performHapticFeedback(HapticFeedbackType.LightTouch)
-                                                actions.onSend()
-                                            }
-                                        }
-                                        else -> {
-                                            // Empty + not streaming: voice needs long press (TODO)
+                                        },
+                                        onDoubleClick = {}
+                                    )
+                                    .padding(end = 4.dp),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                if (isRecording) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(40.dp)
+                                            .background(
+                                                color = MaterialTheme.colorScheme.primaryContainer,
+                                                shape = RoundedCornerShape(HermexRadii.Composer)
+                                            ),
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        Column(
+                                            modifier = Modifier.padding(horizontal = 8.dp),
+                                            horizontalAlignment = Alignment.CenterHorizontally
+                                        ) {
+                                            Icon(
+                                                Icons.Filled.Mic,
+                                                contentDescription = "Recording",
+                                                tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                                modifier = Modifier.size(16.dp),
+                                            )
+                                            Text(
+                                                text = formatElapsed(recordingDuration),
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                            )
                                         }
                                     }
-                                }
-                                .padding(end = 4.dp),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            if (isRecording) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(40.dp)
-                                        .background(
-                                            color = MaterialTheme.colorScheme.primaryContainer,
-                                            shape = RoundedCornerShape(24.dp)
+                                } else {
+                                    FilledIconButton(
+                                        onClick = {
+                                            // Click handled by combinedClickable
+                                        },
+                                        enabled = true,
+                                        colors = IconButtonDefaults.filledIconButtonColors(
+                                            containerColor = MaterialTheme.colorScheme.primaryContainer,
+                                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                                         ),
-                                    contentAlignment = Alignment.Center,
-                                ) {
-                                    Column(
-                                        modifier = Modifier.padding(horizontal = 8.dp),
-                                        horizontalAlignment = Alignment.CenterHorizontally
+                                        modifier = Modifier.size(40.dp),
                                     ) {
                                         Icon(
                                             Icons.Filled.Mic,
-                                            contentDescription = "Recording",
-                                            tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                                            modifier = Modifier.size(18.dp),
-                                        )
-                                        Text(
-                                            text = formatElapsed(recordingDuration),
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                            contentDescription = "Voice input",
+                                            modifier = Modifier.size(20.dp),
                                         )
                                     }
                                 }
-                            } else {
-                                FilledIconButton(
-                                    onClick = { /* handled by clickable above */ },
-                                    enabled = composerState.canSend || showStop || isStreaming,
-                                    modifier = Modifier.size(40.dp),
-                                ) {
-                                    Icon(
-                                        actionIcon,
-                                        contentDescription = actionDesc,
-                                        modifier = Modifier.size(20.dp),
-                                    )
-                                }
+                            }
+
+                            // Audio wave button (for audio wave input)
+                            IconButton(onClick = { actions.onStartAudioWave() }) {
+                                Icon(
+                                    Icons.Filled.KeyboardVoice,
+                                    contentDescription = "Audio wave input",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
                             }
                         }
                     }
@@ -423,102 +405,12 @@ fun ChatComposer(
     }
 }
 
+/** Format milliseconds to MM:SS */
 private fun formatElapsed(ms: Long): String {
     val totalSeconds = ms / 1000
     val minutes = totalSeconds / 60
     val seconds = totalSeconds % 60
     return "%02d:%02d".format(minutes, seconds)
-}
-
-@Composable
-private fun ComposerChip(
-    icon: ImageVector,
-    label: String?,
-    contentDescription: String,
-    onClick: () -> Unit,
-    enabled: Boolean = true,
-    isLoading: Boolean = false,
-) {
-    val contentColor = if (enabled) {
-        MaterialTheme.colorScheme.onSurfaceVariant
-    } else {
-        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
-    }
-    val chipContent: @Composable (androidx.compose.foundation.layout.RowScope.() -> Unit) = {
-        if (isLoading) {
-            CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
-        } else {
-            Icon(
-                icon,
-                contentDescription = if (label == null) contentDescription else null,
-                modifier = Modifier.size(15.dp),
-                tint = contentColor,
-            )
-        }
-        if (label != null) {
-            Spacer(Modifier.width(5.dp))
-            Text(
-                text = label,
-                style = MaterialTheme.typography.labelSmall,
-                color = contentColor,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.widthIn(max = 96.dp),
-            )
-        }
-    }
-    Surface(
-        modifier = Modifier.clickable(enabled = enabled && !isLoading, onClick = onClick),
-        shape = RoundedCornerShape(HermexRadii.Accessory),
-        color = MaterialTheme.colorScheme.surfaceContainer,
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = if (label != null) 10.dp else 8.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            content = chipContent,
-        )
-    }
-}
-
-@Composable
-private fun ProfileSelectorButton(
-    profileOptions: List<ProfileSummary>,
-    selectedProfileName: String?,
-    isSwitchingProfile: Boolean,
-    onSelectProfile: (String) -> Unit,
-) {
-    val displayName = profileOptions.firstOrNull { it.normalizedName == selectedProfileName }?.displayName
-        ?: selectedProfileName
-        ?: "Profile"
-    ComposerChip(
-        icon = Icons.Filled.Person,
-        label = displayName,
-        contentDescription = "Select profile",
-        enabled = !isSwitchingProfile,
-        isLoading = isSwitchingProfile,
-        onClick = { /* TODO: open profile picker */ },
-    )
-}
-
-@Composable
-private fun ModelSelectorButton(
-    modelCatalogGroups: List<ModelCatalogGroup>,
-    currentModel: String?,
-    currentModelProvider: String?,
-    isLoadingModelCatalog: Boolean,
-    isUpdatingComposerConfiguration: Boolean,
-    onOpenModelPicker: () -> Unit,
-    onSelectModel: (ModelCatalogOption) -> Unit,
-) {
-    val displayName = currentModel ?: "Model"
-    ComposerChip(
-        icon = Icons.Filled.Settings,
-        label = displayName,
-        contentDescription = "Select model",
-        enabled = !isUpdatingComposerConfiguration,
-        isLoading = isLoadingModelCatalog || isUpdatingComposerConfiguration,
-        onClick = onOpenModelPicker,
-    )
 }
 
 @Composable
@@ -543,107 +435,85 @@ private fun PendingAttachmentStrip(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     if (attachment.isImage == true && attachment.path != null) {
+                        // Thumbnail for images
                         Box(
-                            modifier = Modifier.size(40.dp),
+                            modifier = Modifier
+                                .size(40.dp),
                             contentAlignment = Alignment.Center,
                         ) {
-                            SubcomposeAsyncImage(
-                                model = attachment.path!!,
-                                contentDescription = null,
-                                contentScale = ContentScale.Crop,
+                            coil3.compose.SubcomposeAsyncImage(
+                                model = attachment.path,
+                                contentDescription = attachment.name ?: "Attachment thumbnail",
                                 modifier = Modifier
-                                    .size(40.dp)
+                                    .fillMaxSize()
                                     .clip(RoundedCornerShape(HermexRadii.Accessory)),
-                                placeholder = {
+                                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                                loading = {
                                     Box(
-                                        modifier = Modifier.size(40.dp)
-                                            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-                                            .clip(RoundedCornerShape(HermexRadii.Accessory)),
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .background(
+                                                MaterialTheme.colorScheme.surfaceContainerLow,
+                                                RoundedCornerShape(HermexRadii.Accessory),
+                                            ),
                                         contentAlignment = Alignment.Center,
                                     ) {
                                         CircularProgressIndicator(
-                                            modifier = Modifier.size(20.dp),
+                                            modifier = Modifier.size(16.dp),
                                             strokeWidth = 2.dp,
                                         )
                                     }
                                 },
                                 error = {
-                                    Box(
-                                        modifier = Modifier.size(40.dp)
-                                            .background(MaterialTheme.colorScheme.errorContainer)
-                                            .clip(RoundedCornerShape(HermexRadii.Accessory)),
-                                        contentAlignment = Alignment.Center,
-                                    ) {
-                                        Icon(
-                                            Icons.Filled.Image,
-                                            contentDescription = null,
-                                            tint = MaterialTheme.colorScheme.onErrorContainer,
-                                            modifier = Modifier.size(20.dp),
-                                        )
-                                    }
+                                    Icon(
+                                        Icons.Filled.Image,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(24.dp),
+                                    )
                                 },
                             )
                         }
                     } else {
-                        Box(
-                            modifier = Modifier
-                                .size(40.dp)
-                                .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-                                .clip(RoundedCornerShape(HermexRadii.Accessory)),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Icon(
-                                fileTypeIcon(attachment.mime),
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(20.dp),
-                            )
-                        }
+                        Icon(
+                            attachment.mime?.let { com.peditx.hermex.core.network.dto.fileTypeIcon(it) }
+                                ?: Icons.Filled.Image,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(24.dp).padding(8.dp),
+                        )
                     }
-                    Spacer(Modifier.width(8.dp))
                     Column(
                         modifier = Modifier
                             .weight(1f)
-                            .padding(end = 8.dp, top = 4.dp, bottom = 4.dp),
+                            .padding(end = 8.dp),
                     ) {
                         Text(
-                            text = attachment.name ?: "Unknown file",
+                            text = attachment.name ?: "File",
                             style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurface,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
-                        Text(
-                            text = attachment.size?.let { Formatter.formatShortFileSize(context, it) }
-                                ?: "Unknown size",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+                        attachment.size?.let { size ->
+                            Text(
+                                text = android.text.format.Formatter.formatFileSize(context, size),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                            )
+                        }
                     }
                     IconButton(
                         onClick = { onRemove(attachment.id) },
-                        modifier = Modifier.padding(end = 4.dp).size(32.dp),
+                        modifier = Modifier.padding(end = 8.dp),
                     ) {
                         Icon(
                             Icons.Filled.Close,
-                            contentDescription = "Remove",
+                            contentDescription = "Remove attachment",
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(18.dp),
                         )
                     }
                 }
             }
         }
-    }
-}
-
-private fun fileTypeIcon(mime: String?): ImageVector {
-    return when {
-        mime?.startsWith("image/") == true -> Icons.Filled.Image
-        mime?.startsWith("video/") == true -> Icons.Filled.Videocam
-        mime?.startsWith("audio/") == true -> Icons.Filled.MusicNote
-        mime?.startsWith("application/pdf") == true -> Icons.Filled.PictureAsPdf
-        mime?.startsWith("text/") == true -> Icons.Filled.Description
-        else -> Icons.Filled.InsertDriveFile
     }
 }
