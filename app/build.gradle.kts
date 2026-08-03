@@ -15,8 +15,8 @@ android {
         applicationId = "com.peditx.hermex"
         minSdk = 26
         targetSdk = 36
-        versionCode = System.getenv("VERSION_CODE")?.toIntOrNull() ?: 140
-        versionName = "1.0.40"
+        versionCode = System.getenv("VERSION_CODE")?.toIntOrNull() ?: 141
+        versionName = "1.0.41"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
