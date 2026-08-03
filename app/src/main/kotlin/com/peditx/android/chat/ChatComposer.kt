@@ -298,7 +298,7 @@ fun ChatComposer(
                             maxLines = 5,
                             singleLine = false,
                             shape = RoundedCornerShape(24.dp),
-                            colors = OutlinedTextFieldDefaults.colors(
+                            colors = OutlinedTextFieldDefaults.textFieldColors(
                                 unfocusedContainerColor = Color.Transparent,
                                 focusedContainerColor = Color.Transparent,
                                 unfocusedBorderColor = Color.Transparent,
@@ -347,9 +347,7 @@ fun ChatComposer(
                             }
                         }
 
-                        // Simple clickable with long press via pointerInput
-                        var longPressDetected by remember { mutableStateOf(false) }
-
+                        // Simple clickable only - no long press for now
                         Box(
                             modifier = Modifier
                                 .size(40.dp)
@@ -372,26 +370,9 @@ fun ChatComposer(
                                             }
                                         }
                                         else -> {
-                                            // Empty + not streaming: voice needs long press
+                                            // Empty + not streaming: voice needs long press (TODO)
                                         }
                                     }
-                                }
-                                .pointerInput(Unit) {
-                                    androidx.compose.foundation.gestures.detectTapGestures(
-                                        onLongPress = {
-                                            if (!isStreaming && !hasText) {
-                                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                                val hasPermission = ContextCompat.checkSelfPermission(
-                                                    context, Manifest.permission.RECORD_AUDIO
-                                                ) == PackageManager.PERMISSION_GRANTED
-                                                if (hasPermission) {
-                                                    startRecording()
-                                                } else {
-                                                    permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-                                                }
-                                            }
-                                        }
-                                    )
                                 }
                                 .padding(end = 4.dp),
                             contentAlignment = Alignment.Center,
