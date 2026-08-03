@@ -28,7 +28,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.KeyboardVoice
@@ -75,7 +74,6 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.KeyboardActions
 import androidx.compose.ui.text.input.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
@@ -297,16 +295,9 @@ fun ChatComposer(
                             enabled = composerState.isTextFieldEnabled,
                             maxLines = 5,
                             singleLine = false,
-                            keyboardOptions = KeyboardOptions(
+                            keyboardOptions = KeyboardOptions.Default.copy(
                                 imeAction = ImeAction.Send,
                                 keyboardType = KeyboardType.Text
-                            ),
-                            keyboardActions = KeyboardActions(
-                                onDone = {
-                                    if (composerState.canSend && !composerState.isStreaming && !composerState.showStopButton) {
-                                        actions.onSend()
-                                    }
-                                }
                             ),
                             shape = RoundedCornerShape(24.dp),
                             colors = OutlinedTextFieldDefaults.colors(
@@ -322,68 +313,81 @@ fun ChatComposer(
                         )
 
                         // ===== SINGLE ACTION BUTTON: Send / Voice / Steer / Stop =====
-                        val (actionIcon, actionDesc, actionContainerColor, actionContentColor) = when {
-                            // Case 1: Streaming + text empty → Stop
-                            composerState.showStopButton || (composerState.isStreaming && composerState.text.isBlank()) -> {
-                                Icons.Filled.Close to "Stop" to MaterialTheme.colorScheme.errorContainer to MaterialTheme.colorScheme.onErrorContainer
+                        val isStreaming = composerState.isStreaming
+                        val hasText = composerState.text.isNotBlank()
+                        val showStop = composerState.showStopButton
+
+                        val actionIcon: ImageVector
+                        val actionDesc: String
+                        val actionContainerColor: androidx.compose.ui.graphics.Color
+                        val actionContentColor: androidx.compose.ui.graphics.Color
+
+                        when {
+                            showStop || (isStreaming && !hasText) -> {
+                                actionIcon = Icons.Filled.Close
+                                actionDesc = "Stop"
+                                actionContainerColor = MaterialTheme.colorScheme.errorContainer
+                                actionContentColor = MaterialTheme.colorScheme.onErrorContainer
                             }
-                            // Case 2: Streaming + has text → Steer
-                            composerState.isStreaming && composerState.text.isNotBlank() -> {
-                                Icons.AutoMirrored.Filled.Send to "Steer" to MaterialTheme.colorScheme.primaryContainer to MaterialTheme.colorScheme.onPrimaryContainer
+                            isStreaming && hasText -> {
+                                actionIcon = Icons.AutoMirrored.Filled.Send
+                                actionDesc = "Steer"
+                                actionContainerColor = MaterialTheme.colorScheme.primaryContainer
+                                actionContentColor = MaterialTheme.colorScheme.onPrimaryContainer
                             }
-                            // Case 3: Not streaming + has text → Send
-                            !composerState.isStreaming && composerState.text.isNotBlank() -> {
-                                Icons.AutoMirrored.Filled.Send to "Send" to MaterialTheme.colorScheme.primaryContainer to MaterialTheme.colorScheme.onPrimaryContainer
+                            !isStreaming && hasText -> {
+                                actionIcon = Icons.AutoMirrored.Filled.Send
+                                actionDesc = "Send"
+                                actionContainerColor = MaterialTheme.colorScheme.primaryContainer
+                                actionContentColor = MaterialTheme.colorScheme.onPrimaryContainer
                             }
-                            // Case 4: Not streaming + empty → Voice (hold-to-talk)
                             else -> {
-                                Icons.Filled.Mic to "Voice" to MaterialTheme.colorScheme.primaryContainer to MaterialTheme.colorScheme.onPrimaryContainer
+                                actionIcon = Icons.Filled.Mic
+                                actionDesc = "Voice"
+                                actionContainerColor = MaterialTheme.colorScheme.primaryContainer
+                                actionContentColor = MaterialTheme.colorScheme.onPrimaryContainer
                             }
                         }
 
                         Box(
                             modifier = Modifier
                                 .size(40.dp)
-                                .combinedClickable(
-                                    onLongClick = {
-                                        // Voice hold-to-talk: only when empty + not streaming
-                                        if (!composerState.isStreaming && composerState.text.isBlank()) {
-                                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                            val hasPermission = ContextCompat.checkSelfPermission(
-                                                context, Manifest.permission.RECORD_AUDIO
-                                            ) == PackageManager.PERMISSION_GRANTED
-                                            if (hasPermission) {
-                                                startRecording()
-                                            } else {
-                                                permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-                                            }
+                                .clickable {
+                                    when {
+                                        showStop || (isStreaming && !hasText) -> {
+                                            haptic.performHapticFeedback(HapticFeedbackType.LightTouch)
+                                            actions.onStop()
                                         }
-                                    },
-                                    onClick = {
-                                        when {
-                                            composerState.showStopButton || (composerState.isStreaming && composerState.text.isBlank()) -> {
+                                        isStreaming && hasText -> {
+                                            if (composerState.canSend) {
                                                 haptic.performHapticFeedback(HapticFeedbackType.LightTouch)
-                                                actions.onStop()
-                                            }
-                                            composerState.isStreaming && composerState.text.isNotBlank() -> {
-                                                if (composerState.canSend) {
-                                                    haptic.performHapticFeedback(HapticFeedbackType.LightTouch)
-                                                    actions.onSteer()
-                                                }
-                                            }
-                                            !composerState.isStreaming && composerState.text.isNotBlank() -> {
-                                                if (composerState.canSend) {
-                                                    haptic.performHapticFeedback(HapticFeedbackType.LightTouch)
-                                                    actions.onSend()
-                                                }
-                                            }
-                                            else -> {
-                                                // Empty + not streaming: do nothing on click (voice needs hold)
+                                                actions.onSteer()
                                             }
                                         }
-                                    },
-                                    onDoubleClick = {}
-                                )
+                                        !isStreaming && hasText -> {
+                                            if (composerState.canSend) {
+                                                haptic.performHapticFeedback(HapticFeedbackType.LightTouch)
+                                                actions.onSend()
+                                            }
+                                        }
+                                        else -> {
+                                            // Empty + not streaming: voice needs long press
+                                        }
+                                    }
+                                }
+                                .onLongClick {
+                                    if (!isStreaming && !hasText) {
+                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        val hasPermission = ContextCompat.checkSelfPermission(
+                                            context, Manifest.permission.RECORD_AUDIO
+                                        ) == PackageManager.PERMISSION_GRANTED
+                                        if (hasPermission) {
+                                            startRecording()
+                                        } else {
+                                            permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                                        }
+                                    }
+                                }
                                 .padding(end = 4.dp),
                             contentAlignment = Alignment.Center,
                         ) {
@@ -416,14 +420,8 @@ fun ChatComposer(
                                 }
                             } else {
                                 FilledIconButton(
-                                    onClick = { /* handled by combinedClickable */ },
-                                    enabled = composerState.canSend || composerState.showStopButton || composerState.isStreaming,
-                                    colors = FilledIconButtonDefaults.filledIconButtonColors(
-                                        containerColor = actionContainerColor,
-                                        contentColor = actionContentColor,
-                                        disabledContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                                        disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
-                                    ),
+                                    onClick = { /* handled by clickable above */ },
+                                    enabled = composerState.canSend || showStop || isStreaming,
                                     modifier = Modifier.size(40.dp),
                                 ) {
                                     Icon(
@@ -611,7 +609,7 @@ private fun PendingAttachmentStrip(
                             contentAlignment = Alignment.Center,
                         ) {
                             Icon(
-                                attachment.mime?.fileTypeIcon() ?? Icons.Filled.Image,
+                                fileTypeIcon(attachment.mime),
                                 contentDescription = null,
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.size(20.dp),
@@ -652,5 +650,16 @@ private fun PendingAttachmentStrip(
                 }
             }
         }
+    }
+}
+
+private fun fileTypeIcon(mime: String?): ImageVector {
+    return when {
+        mime?.startsWith("image/") == true -> Icons.Filled.Image
+        mime?.startsWith("video/") == true -> Icons.Filled.VideoFile
+        mime?.startsWith("audio/") == true -> Icons.Filled.AudioFile
+        mime?.startsWith("application/pdf") == true -> Icons.Filled.PictureAsPdf
+        mime?.startsWith("text/") == true -> Icons.Filled.Description
+        else -> Icons.Filled.InsertDriveFile
     }
 }

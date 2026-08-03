@@ -250,8 +250,6 @@ fun ChatScreen(
                     onRemoveAttachment = viewModel::removePendingAttachment,
                     onSendVoiceNote = viewModel::sendVoiceNote,
                     onRefresh = viewModel::loadSession,
-                    onStartVoiceRecording = viewModel::startVoiceRecording,
-                    onStartAudioWave = viewModel::startAudioWave,
                 ),
             )
         },
