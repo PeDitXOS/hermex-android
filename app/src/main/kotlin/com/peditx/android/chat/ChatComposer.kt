@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.Close
@@ -329,28 +330,28 @@ fun ChatComposer(
 
                             when {
                                 showStop || (isStreaming && !hasText) -> {
-                                    actionIcon = Close
+                                    actionIcon = Icons.Filled.Close
                                     actionDesc = "Stop"
                                     actionContainerColor = MaterialTheme.colorScheme.errorContainer
                                     actionContentColor = MaterialTheme.colorScheme.onErrorContainer
                                     actionEnabled = true
                                 }
                                 isStreaming && hasText -> {
-                                    actionIcon = ArrowForward
+                                    actionIcon = Icons.Filled.ArrowForward
                                     actionDesc = "Steer"
                                     actionContainerColor = MaterialTheme.colorScheme.primaryContainer
                                     actionContentColor = MaterialTheme.colorScheme.onPrimaryContainer
                                     actionEnabled = composerState.canSend
                                 }
                                 !isStreaming && hasText -> {
-                                    actionIcon = ArrowForward
+                                    actionIcon = Icons.Filled.ArrowForward
                                     actionDesc = "Send"
                                     actionContainerColor = MaterialTheme.colorScheme.primaryContainer
                                     actionContentColor = MaterialTheme.colorScheme.onPrimaryContainer
                                     actionEnabled = composerState.canSend
                                 }
                                 else -> {
-                                    actionIcon = Mic
+                                    actionIcon = Icons.Filled.Mic
                                     actionDesc = "Voice"
                                     actionContainerColor = MaterialTheme.colorScheme.primaryContainer
                                     actionContentColor = MaterialTheme.colorScheme.onPrimaryContainer
