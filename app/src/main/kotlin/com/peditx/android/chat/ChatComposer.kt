@@ -27,13 +27,13 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.KeyboardVoice
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.RemoveRedEye
-import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
@@ -337,14 +337,14 @@ fun ChatComposer(
                                     actionEnabled = true
                                 }
                                 isStreaming && hasText -> {
-                                    actionIcon = Send
+                                    actionIcon = ArrowForward
                                     actionDesc = "Steer"
                                     actionContainerColor = MaterialTheme.colorScheme.primaryContainer
                                     actionContentColor = MaterialTheme.colorScheme.onPrimaryContainer
                                     actionEnabled = composerState.canSend
                                 }
                                 !isStreaming && hasText -> {
-                                    actionIcon = Send
+                                    actionIcon = ArrowForward
                                     actionDesc = "Send"
                                     actionContainerColor = MaterialTheme.colorScheme.primaryContainer
                                     actionContentColor = MaterialTheme.colorScheme.onPrimaryContainer
