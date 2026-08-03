@@ -25,7 +25,6 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.Close
@@ -330,7 +329,7 @@ fun ChatComposer(
 
                             when {
                                 showStop || (isStreaming && !hasText) -> {
-                                    actionIcon = Icons.Filled.Close
+                                    actionIcon = Close
                                     actionDesc = "Stop"
                                     actionContainerColor = MaterialTheme.colorScheme.errorContainer
                                     actionContentColor = MaterialTheme.colorScheme.onErrorContainer
@@ -351,7 +350,7 @@ fun ChatComposer(
                                     actionEnabled = composerState.canSend
                                 }
                                 else -> {
-                                    actionIcon = Icons.Filled.Mic
+                                    actionIcon = Mic
                                     actionDesc = "Voice"
                                     actionContainerColor = MaterialTheme.colorScheme.primaryContainer
                                     actionContentColor = MaterialTheme.colorScheme.onPrimaryContainer
