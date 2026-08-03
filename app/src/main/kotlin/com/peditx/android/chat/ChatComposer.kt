@@ -336,14 +336,14 @@ fun ChatComposer(
                                     actionEnabled = true
                                 }
                                 isStreaming && hasText -> {
-                                    actionIcon = Icons.AutoMirrored.Filled.Send
+                                    actionIcon = Icons.Filled.Send
                                     actionDesc = "Steer"
                                     actionContainerColor = MaterialTheme.colorScheme.primaryContainer
                                     actionContentColor = MaterialTheme.colorScheme.onPrimaryContainer
                                     actionEnabled = composerState.canSend
                                 }
                                 !isStreaming && hasText -> {
-                                    actionIcon = Icons.AutoMirrored.Filled.Send
+                                    actionIcon = Icons.Filled.Send
                                     actionDesc = "Send"
                                     actionContainerColor = MaterialTheme.colorScheme.primaryContainer
                                     actionContentColor = MaterialTheme.colorScheme.onPrimaryContainer
