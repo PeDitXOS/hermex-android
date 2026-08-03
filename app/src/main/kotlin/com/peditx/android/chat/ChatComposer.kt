@@ -33,6 +33,7 @@ import androidx.compose.material.icons.filled.KeyboardVoice
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.RemoveRedEye
+import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
@@ -336,14 +337,14 @@ fun ChatComposer(
                                     actionEnabled = true
                                 }
                                 isStreaming && hasText -> {
-                                    actionIcon = Icons.Filled.Send
+                                    actionIcon = Send
                                     actionDesc = "Steer"
                                     actionContainerColor = MaterialTheme.colorScheme.primaryContainer
                                     actionContentColor = MaterialTheme.colorScheme.onPrimaryContainer
                                     actionEnabled = composerState.canSend
                                 }
                                 !isStreaming && hasText -> {
-                                    actionIcon = Icons.Filled.Send
+                                    actionIcon = Send
                                     actionDesc = "Send"
                                     actionContainerColor = MaterialTheme.colorScheme.primaryContainer
                                     actionContentColor = MaterialTheme.colorScheme.onPrimaryContainer
