@@ -77,7 +77,6 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -298,10 +297,6 @@ fun ChatComposer(
                             enabled = composerState.isTextFieldEnabled,
                             maxLines = 5,
                             singleLine = false,
-                            keyboardOptions = KeyboardOptions.Default.copy(
-                                imeAction = ImeAction.Send,
-                                keyboardType = KeyboardType.Text
-                            ),
                             shape = RoundedCornerShape(24.dp),
                             colors = OutlinedTextFieldDefaults.colors(
                                 unfocusedContainerColor = Color.Transparent,
@@ -352,48 +347,52 @@ fun ChatComposer(
                             }
                         }
 
+                        // Simple clickable with long press via pointerInput
+                        var longPressDetected by remember { mutableStateOf(false) }
+
                         Box(
                             modifier = Modifier
                                 .size(40.dp)
-                                .combinedClickable(
-                                    onClick = {
-                                        when {
-                                            showStop || (isStreaming && !hasText) -> {
+                                .clickable {
+                                    when {
+                                        showStop || (isStreaming && !hasText) -> {
+                                            haptic.performHapticFeedback(HapticFeedbackType.LightTouch)
+                                            actions.onStop()
+                                        }
+                                        isStreaming && hasText -> {
+                                            if (composerState.canSend) {
                                                 haptic.performHapticFeedback(HapticFeedbackType.LightTouch)
-                                                actions.onStop()
-                                            }
-                                            isStreaming && hasText -> {
-                                                if (composerState.canSend) {
-                                                    haptic.performHapticFeedback(HapticFeedbackType.LightTouch)
-                                                    actions.onSteer()
-                                                }
-                                            }
-                                            !isStreaming && hasText -> {
-                                                if (composerState.canSend) {
-                                                    haptic.performHapticFeedback(HapticFeedbackType.LightTouch)
-                                                    actions.onSend()
-                                                }
-                                            }
-                                            else -> {
-                                                // Empty + not streaming: voice needs long press
+                                                actions.onSteer()
                                             }
                                         }
-                                    },
-                                    onLongClick = {
-                                        if (!isStreaming && !hasText) {
-                                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                            val hasPermission = ContextCompat.checkSelfPermission(
-                                                context, Manifest.permission.RECORD_AUDIO
-                                            ) == PackageManager.PERMISSION_GRANTED
-                                            if (hasPermission) {
-                                                startRecording()
-                                            } else {
-                                                permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                                        !isStreaming && hasText -> {
+                                            if (composerState.canSend) {
+                                                haptic.performHapticFeedback(HapticFeedbackType.LightTouch)
+                                                actions.onSend()
                                             }
                                         }
-                                    },
-                                    onDoubleClick = {}
-                                )
+                                        else -> {
+                                            // Empty + not streaming: voice needs long press
+                                        }
+                                    }
+                                }
+                                .pointerInput(Unit) {
+                                    androidx.compose.foundation.gestures.detectTapGestures(
+                                        onLongPress = {
+                                            if (!isStreaming && !hasText) {
+                                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                val hasPermission = ContextCompat.checkSelfPermission(
+                                                    context, Manifest.permission.RECORD_AUDIO
+                                                ) == PackageManager.PERMISSION_GRANTED
+                                                if (hasPermission) {
+                                                    startRecording()
+                                                } else {
+                                                    permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                                                }
+                                            }
+                                        }
+                                    )
+                                }
                                 .padding(end = 4.dp),
                             contentAlignment = Alignment.Center,
                         ) {
@@ -426,7 +425,7 @@ fun ChatComposer(
                                 }
                             } else {
                                 FilledIconButton(
-                                    onClick = { /* handled by combinedClickable */ },
+                                    onClick = { /* handled by clickable above */ },
                                     enabled = composerState.canSend || showStop || isStreaming,
                                     modifier = Modifier.size(40.dp),
                                 ) {
