@@ -49,7 +49,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -298,7 +297,7 @@ fun ChatComposer(
                             maxLines = 5,
                             singleLine = false,
                             shape = RoundedCornerShape(24.dp),
-                            colors = OutlinedTextFieldDefaults.textFieldColors(
+                            colors = androidx.compose.material3.TextFieldDefaults.textFieldColors(
                                 unfocusedContainerColor = Color.Transparent,
                                 focusedContainerColor = Color.Transparent,
                                 unfocusedBorderColor = Color.Transparent,
@@ -347,7 +346,6 @@ fun ChatComposer(
                             }
                         }
 
-                        // Simple clickable only - no long press for now
                         Box(
                             modifier = Modifier
                                 .size(40.dp)
